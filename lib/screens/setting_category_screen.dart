@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants.dart';
+import '../services/apiCategory.dart';
 
 final Map<String, List<IconData>> iconGroups = {
   'Mua sắm' : [
@@ -64,6 +65,7 @@ class SettingCategoryScreen extends StatefulWidget {
 }
 
 class _SettingCategoryScreenState extends State<SettingCategoryScreen> {
+  final CategoryService _categoryService = CategoryService();
   final TextEditingController _nameController = TextEditingController();
   IconData? _selectedIcon;
 
@@ -79,7 +81,7 @@ class _SettingCategoryScreenState extends State<SettingCategoryScreen> {
     super.dispose();
   }
 
-  void _saveCategory(){
+  void _saveCategory() async {
     final categoryName = _nameController.text.trim();
     if(categoryName.isEmpty || _selectedIcon == null){
       ScaffoldMessenger.of(context).showSnackBar(
@@ -88,13 +90,24 @@ class _SettingCategoryScreenState extends State<SettingCategoryScreen> {
       return;
     }
 
-    final newCategory = {
-      'label': categoryName,
-      'icon': _selectedIcon,
-      'isSetting': false,
-    };
+    try {
+      await _categoryService.createCategory(
+        categoryName,
+        _selectedIcon!.codePoint,
+      );
 
-    Navigator.pop(context, newCategory); // tra ve newCategory
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Thêm danh mục thành công!')),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      debugPrint("Lỗi khi thêm danh mục: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi: $e')),
+      );
+    }
   }
 
   Widget _buildIconItem(IconData icon){

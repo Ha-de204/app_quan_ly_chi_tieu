@@ -1,17 +1,19 @@
 const reportService = require('../../services/report.service');
 const budgetService = require('../../services/budget.service');
 
+// Hàm chuẩn hóa ngày tháng giữ nguyên vì JS Date tương thích tốt với MongoDB
 const normalizeDateParams = (req) => {
     const { startDate, endDate } = req.query;
 
-    const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1); // Đầu năm
-    const end = endDate ? new Date(endDate) : new Date(new Date().getFullYear(), 11, 31); // Cuối năm
+    const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1);
+    const end = endDate ? new Date(endDate) : new Date(new Date().getFullYear(), 11, 31);
 
     return { startDate: start, endDate: end };
 };
 
 const getSummary = async (req, res) => {
-    const user_id = req.user_id;
+    //const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
     const { startDate, endDate } = normalizeDateParams(req);
 
     const getPeriodString = (dateObj) =>
@@ -20,13 +22,20 @@ const getSummary = async (req, res) => {
     const period = getPeriodString(startDate);
 
     try {
+        // Lấy ngân sách: Đảm bảo service trả về con số (ví dụ: 5000000)
         const budgetAmount = await budgetService.getBudgetsAmountPeriod(user_id, period);
+
+        // Lấy tổng chi tiêu từ Transactions
         const transactionSummary = await reportService.getSummaryByDateRange(user_id, startDate, endDate);
-        const totalExpense = transactionSummary.TotalExpense;
-        const netBalance = budgetAmount - totalExpense;
+
+        const totalExpense = transactionSummary.TotalExpense || 0;
+
+        // Tính toán số dư
+        const netBalance = (budgetAmount || 0) - totalExpense;
+
         res.status(200).json({
            TotalExpense: totalExpense,
-           BudgetAmount: budgetAmount,
+           BudgetAmount: budgetAmount || 0,
            NetBalance: netBalance
         });
     } catch (error) {
@@ -35,13 +44,14 @@ const getSummary = async (req, res) => {
     }
 };
 
-
 const getCategoryBreakdown = async (req, res) => {
-    const user_id = req.user_id;
+    //const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
     const { startDate, endDate } = normalizeDateParams(req);
 
     try {
         const breakdown = await reportService.getCategoryBreakdown(user_id, startDate, endDate);
+        // MongoDB Service trả về mảng kết quả từ Aggregate, gửi trực tiếp về client
         res.status(200).json(breakdown);
     } catch (error) {
         console.error('Lỗi lấy phân tích danh mục:', error);
@@ -49,9 +59,9 @@ const getCategoryBreakdown = async (req, res) => {
     }
 };
 
-
 const getMonthlyFlow = async (req, res) => {
-    const user_id = req.user_id;
+    //const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
     const year = parseInt(req.query.year) || new Date().getFullYear();
 
     try {

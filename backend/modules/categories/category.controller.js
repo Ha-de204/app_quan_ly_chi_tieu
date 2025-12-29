@@ -1,7 +1,8 @@
 const categoryService = require('../../services/category.service');
 
 const getCategories = async (req, res) => {
-    const user_id = req.user_id;
+    //const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
 
     try {
         const categories = await categoryService.getCategoriesByUser(user_id);
@@ -13,12 +14,13 @@ const getCategories = async (req, res) => {
 };
 
 const createCategory = async (req, res) => {
-    const user_id = req.user_id;
+    //const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
     const { name, iconCodePoint } = req.body;
 
     console.log('ID người dùng nhận được trong Controller:', user_id);
 
-    if (!user_id || isNaN(parseInt(user_id, 10))) {
+    if (!user_id) {
         return res.status(401).json({ message: 'Không được phép. Vui lòng đăng nhập lại.' });
     }
 
@@ -43,11 +45,12 @@ const createCategory = async (req, res) => {
 
 // update danh muc
 const updateCategory = async (req, res) => {
-    const user_id = req.user_id;
-    const categoryId = parseInt(req.params.id);
+    //const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
+    const categoryId = req.params.id;
     const { name, iconCodePoint } = req.body;
 
-    if (isNaN(categoryId) || !name || iconCodePoint === undefined) {
+    if (!categoryId || categoryId.length !== 24 || !name || iconCodePoint === undefined) {
         return res.status(400).json({ message: 'Dữ liệu cập nhật hoặc ID danh mục không hợp lệ.' });
     }
 
@@ -72,10 +75,11 @@ const updateCategory = async (req, res) => {
 
 // delete danh muc
 const deleteCategory = async (req, res) => {
-    const user_id = req.user_id;
-    const categoryId = parseInt(req.params.id);
+    //const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
+    const categoryId = req.params.id;
 
-    if (isNaN(categoryId)) {
+    if (!categoryId || categoryId.length !== 24) {
         return res.status(400).json({ message: 'ID danh mục không hợp lệ.' });
     }
 
@@ -86,7 +90,7 @@ const deleteCategory = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy danh mục để xóa hoặc danh mục này là mặc định.' });
         }
 
-        res.status(200).json({ message: `Xóa danh mục ID ${categoryId} thành công.` });
+        res.status(200).json({ message: `Xóa danh mục thành công.` });
     } catch (error) {
         console.error('Lỗi xóa danh mục:', error);
         res.status(500).json({ message: 'Lỗi máy chủ nội bộ.' });

@@ -1,37 +1,35 @@
-const { config, sql } = require('../config/db');
+const mongoose = require('mongoose');
 
-const pool = new sql.ConnectionPool(config);
 let isConnected = false;
 
 const connectDB = async () => {
     try {
         if (!isConnected) {
-            await pool.connect();
+            const dbUri = process.env.MONGO_URI;
+
+            if (!dbUri) {
+                throw new Error("MONGO_URI không tồn tại trong biến môi trường!");
+            }
+
+            await mongoose.connect(dbUri);
             isConnected = true;
-            console.log('✅ Kết nối SQL Server thành công!');
+            console.log('✅ Kết nối MongoDB Atlas thành công!');
         }
-        return pool;
+        return mongoose.connection;
     } catch (err) {
         isConnected = false;
-        console.error('❌ Lỗi kết nối SQL Server:', err);
+        console.error('❌ Lỗi kết nối MongoDB:', err.message);
     }
 };
 
-const executeQuery = async (query, params = []) => {
+const executeQuery = async (modelAction) => {
     await connectDB();
     try {
-        const request = pool.request();
-        params.forEach(param => {
-            request.input(param.name, param.type, param.value);
-        });
-
-        const result = await request.query(query);
-        return result;
-
+        return await modelAction();
     } catch (err) {
-        console.error('Lỗi thực thi truy vấn:', err.message);
+        console.error('Lỗi thực thi dữ liệu MongoDB:', err.message);
         throw err;
     }
 };
 
-module.exports = { executeQuery, connectDB, sql };
+module.exports = { connectDB, executeQuery, mongoose };

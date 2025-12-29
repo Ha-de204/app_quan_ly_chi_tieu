@@ -1,26 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../constants.dart';
-import '../models/ReminderData.dart';
+import '../models/reminder_model.dart';
+import '../services/apiReminder.dart';
+
 
 class AddReminderScreen extends StatefulWidget {
-  const AddReminderScreen({super.key});
+  final ReminderModel? reminder;
+  const AddReminderScreen({super.key, this.reminder});
 
   @override
   State<AddReminderScreen> createState() => _AddReminderScreenState();
 }
 
 class _AddReminderScreenState extends State<AddReminderScreen> {
+  final ReminderService _reminderService = ReminderService();
+
   // controller cho input text
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _messageController = TextEditingController();
-  final TextEditingController _noteController = TextEditingController();
+  late TextEditingController _titleController;
+  late TextEditingController _messageController;
+  DateTime _selectedDate = DateTime.now();
 
   String? _selectedFrequency = 'Hàng ngày';
   final List<String> _frequencyOptions = ['Hàng ngày', 'Hàng tuần', 'Hàng tháng', 'Hàng năm'];
 
   //State cho Date va Time
   DateTime _selectedDateTime = DateTime.now().add(const Duration(minutes: 5));
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -31,14 +37,23 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       DateTime.now().day,
       DateTime.now().hour,
       DateTime.now().minute,
-    ).add(const Duration(minutes: 1));
+    ).add(const Duration(minutes: 2));
+    if (widget.reminder != null) {
+      _titleController = TextEditingController(text: widget.reminder!.title);
+      _messageController = TextEditingController(text: widget.reminder!.message);
+      _selectedDate = widget.reminder!.dueDate;
+      _selectedFrequency = widget.reminder!.frequency;
+    } else {
+      // Chế độ Add mới
+      _titleController = TextEditingController();
+      _messageController = TextEditingController();
+    }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _messageController.dispose();
-    _noteController.dispose();
     super.dispose();
   }
 
@@ -101,12 +116,20 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       });
     }
   }
+  String _cleanId(dynamic rawId) {
+    if (rawId == null) return "";
+    String idStr = rawId.toString();
+    if (idStr.contains("ObjectId(")) {
+      final match = RegExp(r"ObjectId\('([a-fA-F0-9]+)'\)").firstMatch(idStr);
+      return match?.group(1) ?? idStr;
+    }
+    return idStr.replaceAll(RegExp(r"[^a-fA-F0-9]"), "").trim();
+  }
 
   // luu reminder
-  void _saveReminder() {
+  Future<void> _saveReminder() async {
     final title = _titleController.text.trim();
     final message = _messageController.text.trim();
-    final note = _noteController.text.trim();
 
     if(title.isEmpty){
       ScaffoldMessenger.of(context).showSnackBar(
@@ -118,16 +141,43 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       return;
     }
 
-    final newReminder = Reminder(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      title: title,
-      message: message.isNotEmpty ? message: null,
-      dateTime: _selectedDateTime,
-      frequency: _selectedFrequency!,
-      note: note.isNotEmpty ? note : null,
-      isEnabled: true,
-    );
-    Navigator.pop(context, newReminder);// tra doi tuong ReminderData ve man hinh truoc
+    setState(() => _isSaving = true);
+    try {
+      Map<String, dynamic> result;
+      if (widget.reminder != null) {
+        result = await _reminderService.updateReminder(
+          widget.reminder!.id,
+          title: title,
+          message: message,
+          dueDate: _selectedDateTime.toIso8601String(),
+          frequency: _selectedFrequency!,
+          isEnabled: widget.reminder!.isEnabled,
+        );
+      } else {
+        result = await _reminderService.createReminder(
+          title: title,
+          message: message,
+          dueDate: _selectedDateTime.toIso8601String(),
+          frequency: _selectedFrequency!,
+        );
+      }
+
+      if (result['success'] == true) {
+        if (mounted) {
+          Navigator.pop(context, true);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'] ?? 'Lỗi lưu dữ liệu')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Lỗi lưu lời nhắc: $e");
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   Widget _buildCustomInput({
@@ -263,16 +313,19 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
   @override
   Widget build(BuildContext context) {
     // format theo tieng Viet
-    final dateFormatter = DateFormat('dd/MM/yyyy');
-    final timeFormatter = DateFormat('HH:mm');
+    final dateStr = DateFormat('dd/MM/yyyy').format(_selectedDateTime);
+    final timeStr = DateFormat('HH:mm').format(_selectedDateTime);
 
-    String selectedDateString = dateFormatter.format(_selectedDateTime);
-    String selectedTimeString = timeFormatter.format(_selectedDateTime);
+    final bool isEditing = widget.reminder != null;
+    final String appBarTitle = isEditing ? 'Sửa lời nhắc' : 'Thêm lời nhắc';
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+        title: Text(
+            appBarTitle,
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black)
+        ),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0.5,
@@ -281,7 +334,9 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
           child: const Text('Hủy', style: TextStyle(color: kPrimaryPink, fontSize: 16)),
         ),
         actions: [
-          IconButton(
+          _isSaving
+          ? const Center(child: Padding(padding: EdgeInsets.only(right: 16), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimaryPink))))
+          : IconButton(
             icon: const Icon(Icons.check, color: kPrimaryPink),
             onPressed: _saveReminder,
           ),
@@ -308,25 +363,17 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
 
             _buildDateTimeInput(
               title: 'Ngày bắt đầu nhắc nhở',
-              value: selectedDateString,
+              value: dateStr,
               onTap: _selectDate,
               icon: Icons.calendar_today_outlined,
             ),
 
             _buildDateTimeInput(
               title: 'Thời gian',
-              value: selectedTimeString,
+              value: timeStr,
               onTap: _selectTime,
               icon: Icons.access_time_outlined,
             ),
-
-            _buildCustomInput(
-              title: 'Ghi chú',
-              hintText: 'Đừng quên ghi lại các khoản chi tiêu của bạn!',
-              controller: _noteController,
-              maxLines: 3,
-            ),
-
             const SizedBox(height: 50),
           ],
         ),

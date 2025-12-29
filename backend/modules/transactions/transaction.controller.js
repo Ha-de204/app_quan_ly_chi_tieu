@@ -1,10 +1,15 @@
 const transactionService = require('../../services/transaction.service');
 
 const createTransaction = async (req, res) => {
-    const user_id = req.user_id;
+   // const user_id = req.user_id;
+    const user_id = "658123456789012345678901";
     const { category_id, amount, type, date, title, note } = req.body;
+
+    console.log("Dữ liệu nhận được từ Flutter:", req.body);
+     console.log("User ID đang sử dụng:", user_id);
+
     if (!category_id || !amount || !type || !date || !title) {
-        return res.status(400).json({ message: 'Thiếu dữ liệu bắt buộc (categoryId, amount, type, date, title).' });
+        return res.status(400).json({ message: 'Thiếu dữ liệu bắt buộc (categoryId, amount, type, date, title).' , received: req.body});
     }
 
     try {
@@ -30,7 +35,7 @@ const createTransaction = async (req, res) => {
 };
 
 const getTransactions = async (req, res) => {
-    const user_id= req.user_id;
+    const user_id = "658123456789012345678901";
 
     try {
         const transactions = await transactionService.getTransactionsByUserId(user_id);
@@ -41,12 +46,12 @@ const getTransactions = async (req, res) => {
     }
 };
 
-// lay chi tiet 1 giao dich
+// Lấy chi tiết 1 giao dịch
 const getTransactionById = async (req, res) => {
-    const user_id = req.user_id;
-    const transaction_id = parseInt(req.params.id);
+    const user_id = "658123456789012345678901";
+    const transaction_id = req.params.id;
 
-    if (isNaN(transaction_id)) {
+    if (!transaction_id || transaction_id.length !== 24) {
         return res.status(400).json({ message: 'ID giao dịch không hợp lệ.' });
     }
 
@@ -63,13 +68,13 @@ const getTransactionById = async (req, res) => {
     }
 };
 
-// update giao dich
+// Update giao dịch
 const updateTransaction = async (req, res) => {
-    const user_id = req.user_id;
-    const transaction_id = parseInt(req.params.id);
+    const user_id = "658123456789012345678901";
+    const transaction_id = req.params.id;
     const { category_id, amount, type, date, title, note } = req.body;
 
-    if (isNaN(transaction_id) || !category_id || !amount || !type || !date || !title) {
+    if (!transaction_id || transaction_id.length !== 24 || !category_id || !amount || !type || !date || !title) {
         return res.status(400).json({ message: 'Dữ liệu cập nhật hoặc ID giao dịch không hợp lệ.' });
     }
 
@@ -96,19 +101,19 @@ const updateTransaction = async (req, res) => {
     }
 };
 
-// delete giao dich
+// Delete giao dịch
 const deleteTransaction = async (req, res) => {
-    const user_id = req.user_id;
-    const transaction_id = parseInt(req.params.id);
+    const user_id = "658123456789012345678901";
+    const transaction_id = req.params.id;
 
-    if (isNaN(transaction_id)) {
+    if (!transaction_id || transaction_id.length !== 24) {
         return res.status(400).json({ message: 'ID giao dịch không hợp lệ.' });
     }
 
     try {
         const success = await transactionService.deleteTransaction(transaction_id, user_id);
         if (success) {
-            return res.status(200).json({ message: `Giao dịch ID ${transaction_id} đã được xóa.` });
+            return res.status(200).json({ message: `Giao dịch đã được xóa thành công.` });
         } else {
             return res.status(404).json({ message: 'Không tìm thấy giao dịch hoặc bạn không có quyền xóa.' });
         }
@@ -118,9 +123,10 @@ const deleteTransaction = async (req, res) => {
     }
 };
 
-module.exports = { createTransaction,
-                   getTransactions,
-                   getTransactionById,
-                   updateTransaction,
-                   deleteTransaction
-                  };
+module.exports = {
+    createTransaction,
+    getTransactions,
+    getTransactionById,
+    updateTransaction,
+    deleteTransaction
+};

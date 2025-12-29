@@ -4,15 +4,21 @@ import '../widgets/budget_setting_screen.dart';
 import 'package:intl/intl.dart';
 import '../utils/data_aggregator.dart';
 import 'package:month_year_picker/month_year_picker.dart';
-import '../models/mock_budget_category.dart';
+import '../services/apiBudget.dart';
+import '../services/apiCategory.dart';
+import '../services/apiReport.dart';
+import '../models/category_model.dart';
+import '../models/report_model.dart';
 
 class BudgetCategory {
+  final String id;
   final String name;
   double budget;
   final double expense;
   final IconData icon;
 
   BudgetCategory({
+    required this.id,
     required this.name,
     required this.budget,
     required this.expense,
@@ -23,133 +29,218 @@ class BudgetCategory {
 }
 
 class BudgetDetailScreen extends StatefulWidget {
-  final List<MockBudgetCategory> initialCategoryBudgets;
-  const BudgetDetailScreen({super.key, required this.initialCategoryBudgets});
+  final String period;
+  const BudgetDetailScreen({super.key, required this.period /*required this.initialCategoryBudgets */});
 
   @override
   State<BudgetDetailScreen> createState() => _BudgetDetailScreenState();
 }
 
 class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
-  late double _totalBudgetSetting;
-  DateTime _selectedMonthYear = DateTime.now();
-  List<MockBudgetCategory> _budgetCategoriesFromSetting = [];
+  // Services
+  final BudgetService _budgetService = BudgetService();
+  final CategoryService _categoryService = CategoryService();
+  final ReportService _reportService = ReportService();
 
-  String? _editingCategoryName;
+  // state variables
+  DateTime _selectedMonthYear = DateTime.now();
+  bool _isLoading = true;
+
+  List<CategoryModel> _allCategories = [];
+  Map<String, double> _budgetsMap = {};
+  Map<String, double> _expensesMap = {};
+  double _totalBudgetSetting = 0.0;
+  double _totalExpense = 0.0;
+
+  String? _editingCategoryId;
   String _inputString = '';
   double _currentInput = 0.0;
 
   @override
   void initState(){
     super.initState();
-    _budgetCategoriesFromSetting = List.from(widget.initialCategoryBudgets);
-    _totalBudgetSetting = _budgetCategoriesFromSetting
-        .firstWhere((e) => e.name == 'Ngân sách hàng tháng')
-        .budget;
-    _inputString = _totalBudgetSetting.toInt().toString();
-    _currentInput = _totalBudgetSetting;
-    _editingCategoryName = null;
+    _loadAllData();
   }
 
-  List<BudgetCategory> get _categoryBudgetsDynamic {
-    final actualExpenses = getMonthlyExpenseByCategory(_selectedMonthYear);
-    final Map<String, dynamic> expenseMap = {
-      for(var expense in actualExpenses) expense.categoryName: expense
-    };
-    final List<BudgetCategory> result = [];
+  String _cleanId(dynamic rawId) {
+    if (rawId == null) return "";
+    String idStr = rawId.toString();
 
-    // Duyệt qua TẤT CẢ các danh mục ĐÃ CÀI ĐẶT NGÂN SÁCH (trừ 'Ngân sách hàng tháng')
-    for (var setting in _budgetCategoriesFromSetting) {
-      if (setting.name == 'Ngân sách hàng tháng') continue;
-
-      final expenseData = expenseMap[setting.name];
-      final double expenseAmount = expenseData?.totalAmount ?? 0.0;
-
-      if (setting.budget > 0 || expenseAmount > 0) {
-        result.add(
-            BudgetCategory(
-              name: setting.name,
-              budget: setting.budget,
-              expense: expenseAmount,
-              icon: setting.icon,
-            )
-        );
-      }
-      if (expenseData != null) {
-        expenseMap.remove(setting.name);
-      }
+    if (idStr.contains("ObjectId(")) {
+      final match = RegExp(r"ObjectId\('([a-fA-F0-9]+)'\)").firstMatch(idStr);
+      return match?.group(1) ?? idStr;
     }
-    expenseMap.forEach((categoryName, expense) {
-      if (expense.totalAmount > 0) {
-        result.add(
-            BudgetCategory(
-              name: categoryName,
-              budget: 0.0,
-              expense: expense.totalAmount,
-              icon: expense.icon,
-            )
-        );
-      }
-    });
 
-    return result;
+    if (rawId is Map && rawId.containsKey('\$oid')) {
+      return rawId['\$oid'].toString();
+    }
+
+    return idStr.replaceAll(RegExp(r"[^a-fA-F0-9]"), "").trim();
   }
 
-  double _getBudgetSettingForCategory(String categoryName){
-    MockBudgetCategory? budgetEntry = _budgetCategoriesFromSetting.firstWhere(
-          (e) => e.name == categoryName,
-      orElse: () => MockBudgetCategory(name: '', budget: 0.0, icon: Icons.error),
-    );
-    return budgetEntry.budget;
+  // tai data tu backend
+  Future<void> _loadAllData() async {
+    setState(() => _isLoading = true);
+    String period = DateFormat('yyyy-MM').format(_selectedMonthYear);
+    String startDate = DateFormat('yyyy-MM-01').format(_selectedMonthYear);
+    var nextMonth = DateTime(_selectedMonthYear.year, _selectedMonthYear.month+1, 1);
+    String endDate = DateFormat('yyyy-MM-dd').format(nextMonth.subtract(const Duration(days: 1)));
+
+    try {
+      final results = await Future.wait([
+        _categoryService.getCategories(),
+        _budgetService.getBudgets(period),
+        _reportService.getCategoryBreakdown(startDate, endDate),
+        _reportService.getSummary(startDate, endDate),
+      ]);
+      setState(() {
+        _allCategories = results[0] as List<CategoryModel>;
+
+        // map data ngan sach
+        final budgetList = results[1] as List<dynamic>;
+        Map<String, double> tempBudgets = {};
+        for (var b in budgetList) {
+          if (b == null) continue;
+
+          String bId = _cleanId(b['category_id']);
+          double bAmount = (b['BudgetAmount'] as num? ?? 0.0).toDouble();
+
+          if (bAmount > 0) {
+            tempBudgets[bId] = bAmount;
+            try {
+              final catName = _allCategories.firstWhere((c) => _cleanId(c.id) == bId).name.toLowerCase().trim();
+              tempBudgets[catName] = bAmount;
+            } catch (_) {}
+          }
+        }
+        _budgetsMap = tempBudgets;
+        print("DEBUG: Budgets Map hiện tại: $_budgetsMap");
+
+        // map data chi tieu tu Transaction DB
+        final breakdown = results[2] as List<dynamic>;
+        Map<String, double> tempExpenses = {};
+        for (var e in breakdown) {
+          if (e == null || e['_id'] == null) continue;
+
+          String rawExpenseId = e['_id'].toString();
+          String cleanExpenseId = _cleanId(rawExpenseId);
+          double eAmount = (e['totalAmount'] as num? ?? 0.0).toDouble();
+
+          tempExpenses[cleanExpenseId] = eAmount;
+
+          try {
+            final matchedCat = _allCategories.firstWhere((c) => c.id == cleanExpenseId);
+            tempExpenses[matchedCat.name.toLowerCase().trim()] = eAmount;
+          } catch (_) {
+            debugPrint("Không tìm thấy category ID khớp với chi tiêu: $cleanExpenseId");
+          }
+        }
+        _expensesMap = tempExpenses;
+        print("DEBUG: Expenses Map sau khi chuẩn hóa: $_expensesMap");
+
+        // summary
+        final summary = results[3] as Map<String, dynamic>;
+        _totalBudgetSetting = _budgetsMap['000000000000000000000000'] ??
+            (summary['BudgetAmount'] is num ? (summary['BudgetAmount'] as num).toDouble() : 0.0);
+        _totalExpense = (summary['TotalExpense'] as num? ?? 0.0).toDouble();
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint("Lỗi tải dữ liệu ngân sách: $e");
+      setState(() => _isLoading = false);
+    }
   }
 
-  List<BudgetCategory> get _categoryBudgets => _categoryBudgetsDynamic;
-  double get _totalExpense => getTotalMonthlyExpense(_selectedMonthYear);
-  double get _totalRemaining => _totalBudgetSetting - _totalExpense;
+  // danh sach hien thi da tron data
+  List<BudgetCategory> get _displayItems {
 
-  String _formatAmount(double amount) {
-    final formatter = NumberFormat.currency(
-      locale: 'vi_VN',
-      symbol: '',
-      decimalDigits: 0,
-    );
-    return formatter.format(amount);
-  }
+    return _allCategories.map((cat) {
+      String cleanCatId = _cleanId(cat.id);
+      String searchName = cat.name.toLowerCase().trim();
 
-  double _getBudgetByName(String name) {
-    if(name == 'Monthly') return _totalBudgetSetting;
-    return _categoryBudgets.firstWhere((e) => e.name == name).budget;
+      double budgetValue = _budgetsMap[cleanCatId ] ??
+          _budgetsMap[searchName] ??
+          0.0;
+
+      double expenseValue = _expensesMap[cleanCatId ] ??
+          _expensesMap[searchName] ??
+          0.0;
+
+      return BudgetCategory(
+        id: cat.id,
+        name: cat.name,
+        budget: budgetValue,
+        expense: expenseValue,
+        icon: IconData(cat.iconCodePoint, fontFamily: 'MaterialIcons'),
+      );
+    }).where((item) => item.budget > 0 || item.expense > 0).toList();
   }
 
   // logic chế độ sửa trực tiếp
-  void _startEditing(String categoryName) {
+  void _startEditing(String? categoryId, double initialValue) {
     setState(() {
-      _editingCategoryName = categoryName;
-      double initialBudget = _getBudgetByName(categoryName);
-      _inputString = initialBudget.toInt().toString();
-      _currentInput = initialBudget;
+      _editingCategoryId = categoryId ?? 'Monthly';
+      _inputString = initialValue.toInt().toString();
+      _currentInput = double.tryParse(_inputString) ?? 0.0;
     });
   }
+  
+  Future<void> _saveBudget() async {
+    if(_editingCategoryId == null) return;
+    double newValue = double.tryParse(_inputString) ?? 0.0;
+    String period = DateFormat('yyyy-MM').format(_selectedMonthYear);
+    
+    setState(() => _isLoading = true);
+    String rawId = _editingCategoryId == 'Monthly' ? '000000000000000000000000' : _editingCategoryId!;
+    String finalId = _cleanId(rawId);
+    try {
+      final result = await _budgetService.upsertBudget(
+        categoryId: finalId,
+        amount: newValue,
+        period: period,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        await DataAggregator.refreshData();
+        await _loadAllData();
+
+        if (mounted) {
+          setState(() {
+            _editingCategoryId = null;
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cập nhật ngân sách thành công!')),
+          );
+        }
+      } else {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Lỗi: ${result['message']}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        debugPrint("Lỗi khi lưu ngân sách: $e");
+      }
+    }
+  } 
 
   void _onKeyTap(String key) {
-    if(_editingCategoryName == null) return;
+    if(_editingCategoryId == null) return;
 
-    setState(() {
-      if(key == '✓'){
-        double newValue = double.tryParse(_inputString) ?? 0.0;
-        String categoryToSave = _editingCategoryName == 'Monthly' ? 'Ngân sách hàng tháng' : _editingCategoryName!;
-        _saveCategoryBudget(categoryToSave, newValue);
-        if(_editingCategoryName == 'Monthly'){
-          _totalBudgetSetting = newValue;
-        } else{
-          _saveCategoryBudget(_editingCategoryName!, newValue);
-        }
-        _editingCategoryName = null;
-        _inputString = '';
-        _currentInput = 0.0;
-        return;
-      }
+    if(key == '✓'){
+      _saveBudget();
+      return;
+    }
 
+    setState((){
       if(key == 'x'){
         if(_inputString.isNotEmpty){
           _inputString = _inputString.substring(0, _inputString.length-1);
@@ -161,12 +252,12 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
         _inputString = '0';
         _currentInput = 0.0;
       } else if(key == '▼'){
-        _editingCategoryName = null;
+        _editingCategoryId = null;
         _inputString = '';
         _currentInput = 0.0;
         return;
       } else if(int.tryParse(key) != null){
-        if(_inputString.length < 10){
+        if(_inputString.length < 12){
           if(_inputString == '0'){
             _inputString = key;
           } else {
@@ -179,16 +270,8 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
     });
   }
 
-  void _saveCategoryBudget(String categoryName, double newBudget){
-    final index = _budgetCategoriesFromSetting.indexWhere((e) => e.name == categoryName);
-    if (index != -1) {
-      final updatedEntry = MockBudgetCategory(
-        name: categoryName,
-        budget: newBudget,
-        icon: _budgetCategoriesFromSetting[index].icon,
-      );
-      _budgetCategoriesFromSetting[index] = updatedEntry;
-    }
+  String _formatAmount(double amount) {
+    return NumberFormat.currency(locale: 'vi_VN', symbol: '', decimalDigits: 0).format(amount);
   }
 
   // nut appbar
@@ -220,11 +303,12 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
       setState(() {
         _selectedMonthYear = picked;
       });
+      await _loadAllData();
     }
   }
 
   void _openSettingsScreen() async {
-    final dynamic updatedBudgets = await showModalBottomSheet(
+    final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (BuildContext context) {
@@ -236,23 +320,15 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
               borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
             ),
             child: BudgetSettingScreen(
-              initialBudgets: _budgetCategoriesFromSetting,
+              selectedMonthYear: _selectedMonthYear,
             ),
           ),
         );
       },
     );
 
-    if(updatedBudgets != null && updatedBudgets is List) {
-      List<MockBudgetCategory> newBudgets = updatedBudgets.cast<MockBudgetCategory>();
-      MockBudgetCategory? monthlyBudgetEntry = newBudgets.firstWhere(
-            (e) => e.name == 'Ngân sách hàng tháng',
-        orElse: () => MockBudgetCategory(name: '', budget: 0.0, icon: Icons.error), // Tránh lỗi nếu không tìm thấy
-      );
-      setState(() {
-        _totalBudgetSetting = monthlyBudgetEntry?.budget ?? _totalBudgetSetting;
-        _budgetCategoriesFromSetting = newBudgets;
-      });
+    if (result == true || result == null) {
+      _loadAllData();
     }
   }
   Widget _buildKey(String label, {Color color = Colors.black, bool isAction = false}) {
@@ -268,8 +344,7 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
     else if (isBackspace) icon = Icons.backspace_outlined;
     else if (isDownArrow) icon = Icons.keyboard_arrow_down;
 
-    return Expanded(
-      child: Padding(
+    return Padding(
         padding: const EdgeInsets.all(4.0),
         child: InkWell(
           onTap: () => _onKeyTap(label),
@@ -304,8 +379,7 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
               ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildStatDetail(String title, String value, {Color color = Colors.black}) {
@@ -318,9 +392,9 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
     );
   }
 
-  Widget _buildBudgetRow(String label, double budget, double expense, {IconData? icon, bool isMonthlyTotal = false}) {
-    String categoryKey = isMonthlyTotal ? 'Monthly' : label;
-    bool isEditing = _editingCategoryName == categoryKey;
+  Widget _buildBudgetRow(String? id, String label, double budget, double expense, {IconData? icon, bool isMonthlyTotal = false}) {
+    String currentId = id ?? 'Monthly';
+    bool isEditing = _editingCategoryId == currentId;
 
     double displayBudget = isEditing ? _currentInput : budget;
     double remaining = displayBudget - expense;
@@ -388,10 +462,12 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
                           onPressed: () {
                             if (isEditing) {
                               setState(() {
-                                _editingCategoryName = null;
+                                _editingCategoryId = null;
+                                _inputString = '';
+                                _currentInput = 0.0;
                               });
                             } else {
-                              _startEditing(categoryKey);
+                              _startEditing(currentId, budget);
                             }
                           },
                           child: Text(
@@ -431,7 +507,17 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
   }
 
   Widget _buildInputDisplay() {
-    String title = _editingCategoryName == 'Monthly' ? 'Ngân sách hàng tháng' : _editingCategoryName!;
+    String title = '';
+    if (_editingCategoryId == 'Monthly') {
+      title = 'Ngân sách hàng tháng';
+    } else {
+      // Tìm tên danh mục từ danh sách dựa trên ID đang sửa
+      final category = _allCategories.firstWhere(
+            (cat) => cat.id == _editingCategoryId,
+        orElse: () => CategoryModel(id: '', name: 'Danh mục', iconCodePoint: 0),
+      );
+      title = category.name;
+    }
 
     return Padding(
       padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 8.0),
@@ -462,13 +548,13 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0),
       itemCount: 16,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
         childAspectRatio: 1.8,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
+        mainAxisSpacing: 4,
+        crossAxisSpacing: 4,
       ),
       itemBuilder: (context, index) {
         const List<String> keys = [
@@ -488,7 +574,7 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
   // BUILD chính
   @override
   Widget build(BuildContext context) {
-    bool isEditing = _editingCategoryName != null;
+    bool isEditing = _editingCategoryId != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -496,7 +582,7 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context, _budgetCategoriesFromSetting),
+          onPressed: () => Navigator.pop(context, true),
         ),
         actions: [
           TextButton(
@@ -513,7 +599,9 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
           ),
         ],
       ),
-      body: Stack(
+      body: _isLoading
+        ? const Center(child: CircularProgressIndicator(color: Colors.pink))
+        : Stack(
         children: [
           SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
@@ -523,6 +611,7 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildBudgetRow(
+                      null,
                       'Ngân sách hàng tháng',
                       _totalBudgetSetting,
                       _totalExpense,
@@ -531,12 +620,13 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
 
                   const SizedBox(height: 20),
 
-                  ..._categoryBudgets.map((budget) {
+                  ..._displayItems.map((item) {
                     return _buildBudgetRow(
-                      budget.name,
-                      budget.budget,
-                      budget.expense,
-                      icon: budget.icon,
+                      item.id,
+                      item.name,
+                      item.budget,
+                      item.expense,
+                      icon: item.icon,
                     );
                   }).toList(),
                 ],

@@ -6,7 +6,7 @@ import '../models/mock_budget_category.dart';
 import '../constants.dart';
 import '../models/monthly_expense_data.dart';
 import 'package:intl/intl.dart';
-import '../utils/data_aggregator.dart';
+import '../models/category_model.dart';
 
 class ReportData {
   final String monthLabel;
@@ -14,7 +14,7 @@ class ReportData {
   final double balance;
   final double monthlyBudget;
   final double budgetSpent;
-  final List<TransactionData> monthTransactions;
+  final List<dynamic> monthTransactions;
   final List<MonthlyExpenseData> monthlyReports;
 
   ReportData({
@@ -29,12 +29,12 @@ class ReportData {
 }
 
 class ReportsScreen extends StatefulWidget {
-  final List<TransactionData> transactions;
-  final List<MockBudgetCategory> budgetCategories;
+  final List<dynamic> transactions;
+  final Map<String, double> budgetsMap;
   const ReportsScreen({
     super.key,
     required this.transactions,
-    required this.budgetCategories,
+    required this.budgetsMap,
   });
 
   @override
@@ -43,14 +43,18 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   late ReportData _currentMonthReport;
-  late List<MockBudgetCategory> _budgetCategoriesState;
   final now = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _budgetCategoriesState = List.from(widget.budgetCategories);
-    _currentMonthReport = _getReportDataForCurrentMonth(widget.transactions, _budgetCategoriesState);
+    _currentMonthReport = _getReportDataForCurrentMonth(widget.transactions, widget.budgetsMap);
+  }
+
+  @override
+  void didUpdateWidget(ReportsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _currentMonthReport = _getReportDataForCurrentMonth(widget.transactions, widget.budgetsMap);
   }
 
   // dinh dang tien
@@ -64,29 +68,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   // ham tong hop toan bo giao dich
-  List<MonthlyExpenseData> _getMonthlyExpenseData(List<TransactionData> transactions, List<MockBudgetCategory> budgetCategorie) {
-    final Map<String, List<TransactionData>> grouped = {};
+  List<MonthlyExpenseData> _getMonthlyExpenseData(List<dynamic> transactions, Map<String, double> budgetMap) {
+    final Map<String, List<dynamic>> grouped = {};
     for(var tx in transactions){
-      final key = DateFormat('yyyy-MM').format(tx.date);
+      final date = DateTime.parse(tx['date']);
+      final key = DateFormat('yyyy-MM').format(date);
       grouped.putIfAbsent(key, () => []);
       grouped[key]!.add(tx);
     }
     final List<MonthlyExpenseData> monthlyData = [];
-
-    // thong tin ngan sach hang thang
-    final monthlyBudgetCat = widget.budgetCategories.firstWhere(
-        (cat) => cat.name == 'Ngân sách hàng tháng',
-        orElse: () => MockBudgetCategory(name: 'Ngân sách hàng tháng', budget: 0.0, icon: Icons.error)
-    );
-    final monthlyBudget = monthlyBudgetCat.budget;
+    final double monthlyBudget = budgetMap['TOTAL'] ?? 0.0;
 
     grouped.forEach((key, txList) {
       final parts = key.split('-');
       final year = int.parse(parts[0]);
       final month = int.parse(parts[1]);
 
-      final expense = txList.where((tx) => tx.type == TransactionType.expense)
-          .fold(0.0, (sum, tx) => sum + tx.amount);
+      final expense = txList.fold(0.0, (sum, tx) => sum + (tx['amount'] as num).toDouble());
       final balance = monthlyBudget - expense;
 
       monthlyData.add(MonthlyExpenseData(
@@ -107,28 +105,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   // ham tong hop dl bao cao
-  ReportData _getReportDataForCurrentMonth(List<TransactionData> transactions, List<MockBudgetCategory> budgetCategories){
+  ReportData _getReportDataForCurrentMonth(List<dynamic> transactions, Map<String, double> budgetMap){
     final targetMonth = now.month;
     final targetYear = now.year;
 
     // loc giao dich thang hien tai
-    final monthTransactions = widget.transactions.where((tx) =>
-    tx.date.month == targetMonth && tx.date.year == targetYear
-    ).toList();
+    final monthTransactions = transactions.where((tx) {
+      final date = DateTime.parse(tx['date']);
+      return date.month == targetMonth && date.year == targetYear;
+    }).toList();
 
     // tinh tong chi tieu
-    final totalExpense = monthTransactions.where((tx) => tx.type == TransactionType.expense)
-        .fold(0.0, (sum, tx) => sum + tx.amount);
-
-    // lay thong tin ngan sach hang thang
-    final monthlyBudgetCat = widget.budgetCategories.firstWhere(
-            (cat) => cat.name == 'Ngân sách hàng tháng',
-        orElse: () => MockBudgetCategory(name: 'Ngân sách hàng tháng', budget: 0.0, icon: Icons.error)
-    );
-    final monthlyBudget = monthlyBudgetCat.budget;
+    final totalExpense = monthTransactions.fold(0.0, (sum, tx) => sum + (tx['amount'] as num).toDouble());
+    final double monthlyBudget = budgetMap['TOTAL'] ?? 0.0;
 
     final balance = monthlyBudget - totalExpense;
-    final allMonthlyReports = _getMonthlyExpenseData(transactions,  budgetCategories);
+    final allMonthlyReports = _getMonthlyExpenseData(transactions,  budgetMap);
 
     return ReportData(
       monthLabel: 'Thg ${targetMonth}, ${targetYear}',
@@ -155,21 +147,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   void _openMonthlyBudgetDetail() async {
-    final dynamic updatedBudgets = await Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => BudgetDetailScreen(
-          initialCategoryBudgets: _budgetCategoriesState,
+          period: DateFormat('yyyy-MM').format(now),
         ),
       ),
     );
-
-    if(updatedBudgets != null && updatedBudgets is List<MockBudgetCategory>){
-      setState(() {
-        _budgetCategoriesState = updatedBudgets;
-        _currentMonthReport = _getReportDataForCurrentMonth(widget.transactions, _budgetCategoriesState);
-      });
-    }
   }
 
   Widget _buildReportRow(String label, double value, {Color valueColor = Colors.black}) {

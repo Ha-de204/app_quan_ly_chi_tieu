@@ -10,6 +10,7 @@ const protect = (req, res, next) => {
             token = req.headers.authorization.split(' ')[1];
             const decoded = jwt.verify(token, JWT_SECRET);
             req.user_id = decoded.id;
+            req.id = decoded.id;
             return next();
         } catch (error) {
             console.error(error);

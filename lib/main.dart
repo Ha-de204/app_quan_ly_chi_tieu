@@ -40,7 +40,7 @@ class MyApp extends StatelessWidget {
       ],
       locale: const Locale('vi', 'VN'),
 
-      home: const ExpenseTrackerScreen(), // Sử dụng màn hình đã tách
+      home: const ExpenseTrackerScreen(),
     );
   }
 }

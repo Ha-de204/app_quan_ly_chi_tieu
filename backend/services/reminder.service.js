@@ -1,95 +1,69 @@
-const { executeQuery, sql } = require('./db.service');
+const Reminder = require('../models/Reminder');
+const mongoose = require('mongoose');
 
-// tao loi nhac moi
-const createReminder = async (user_id, title, message, dueDate, frequency) => {
-    const query = `
-        INSERT INTO Reminder (user_id, title, message, due_date, frequency, is_enabled)
-        VALUES (@user_id, @title, @message, @dueDate, @frequency, 1);
-        SELECT SCOPE_IDENTITY() AS reminder_id;
-    `;
+// 1. Tạo lời nhắc mới
+const createReminder = async (user_id, title, message, due_date, frequency) => {
+    const newReminder = new Reminder({
+        user_id: new mongoose.Types.ObjectId(user_id),
+        title,
+        message: message || null,
+        due_date: due_date,
+        frequency,
+        is_enabled: true
+    });
 
-    const result = await executeQuery(query, [
-        { name: 'user_id', type: sql.Int, value: user_id },
-        { name: 'title', type: sql.NVarChar, value: title },
-        { name: 'message', type: sql.NVarChar, value: message || null },
-        { name: 'dueDate', type: sql.DateTime, value: dueDate },
-        { name: 'frequency', type: sql.VarChar, value: frequency }
-    ]);
-
-    return result.recordset[0].reminder_id;
+    const result = await newReminder.save();
+    return result._id;
 };
 
-// lay tat ca loi nhac
+// 2. Lấy tất cả lời nhắc của user
 const getRemindersByUserId = async (user_id) => {
-    const query = `
-        SELECT reminder_id, title, message, due_date, frequency, is_enabled
-        FROM Reminder
-        WHERE user_id = @user_id
-        ORDER BY due_date ASC;
-    `;
-
-    const result = await executeQuery(query, [
-        { name: 'user_id', type: sql.Int, value: user_id }
-    ]);
-
-    return result.recordset;
+    return await Reminder.find({
+        user_id: new mongoose.Types.ObjectId(user_id)
+    }).sort({ due_date: 1 });
 };
 
-// lay chi tiet 1 loi nhac
+// 3. Lấy chi tiết 1 lời nhắc
 const getReminderById = async (reminder_id, user_id) => {
-    const query = `
-        SELECT reminder_id, title, message, due_date, frequency, is_enabled
-        FROM Reminder
-        WHERE reminder_id = @reminder_id AND user_id = @user_id;
-    `;
-
-    const result = await executeQuery(query, [
-        { name: 'reminder_id', type: sql.Int, value: reminder_id },
-        { name: 'user_id', type: sql.Int, value: user_id }
-    ]);
-
-    return result.recordset[0];
+    return await Reminder.findOne({
+        _id: new mongoose.Types.ObjectId(reminder_id),
+        user_id: new mongoose.Types.ObjectId(user_id)
+    });
 };
 
-// update loi nhac
-const updateReminder = async (reminder_id, user_id, title, message, dueDate, frequency, isEnabled) => {
-    const query = `
-        UPDATE  Reminder
-        SET
-            title = @title,
-            message = @message,
-            due_date = @dueDate,
-            frequency = @frequency,
-            is_enabled = @isEnabled
-        WHERE reminder_id = @reminder_id AND user_id = @user_id;
-    `;
-
-    const result = await executeQuery(query, [
-        { name: 'reminder_id', type: sql.Int, value: reminder_id },
-        { name: 'user_id', type: sql.Int, value: user_id },
-        { name: 'title', type: sql.NVarChar, value: title },
-        { name: 'message', type: sql.NVarChar, value: message || null },
-        { name: 'dueDate', type: sql.DateTime, value: dueDate },
-        { name: 'frequency', type: sql.VarChar, value: frequency },
-        { name: 'isEnabled', type: sql.Bit, value: isEnabled }
-    ]);
-
-    return result.rowsAffected[0] > 0;
+// 4. Cập nhật lời nhắc
+const updateReminder = async (reminder_id, user_id, title, message, due_date, frequency, is_enabled) => {
+   try {
+    const result = await Reminder.updateOne(
+            {
+                _id: new mongoose.Types.ObjectId(reminder_id),
+                user_id: new mongoose.Types.ObjectId(user_id)
+            },
+            {
+                $set: {
+                    title: title,
+                    message: message || null,
+                    due_date: due_date,
+                    frequency: frequency,
+                    is_enabled: is_enabled,
+                }
+            }
+        );
+        return result.modifiedCount > 0;
+   } catch (error) {
+      console.error("Lỗi tại Service updateReminder:", error);
+      throw error;
+   }
 };
 
-// delete loi nhac
+// 5. Xóa lời nhắc
 const deleteReminder = async (reminder_id, user_id) => {
-    const query = `
-        DELETE FROM Reminder
-        WHERE reminder_id = @reminder_id AND user_id = @user_id;
-    `;
+    const result = await Reminder.deleteOne({
+        _id: new mongoose.Types.ObjectId(reminder_id),
+        user_id: new mongoose.Types.ObjectId(user_id)
+    });
 
-    const result = await executeQuery(query, [
-        { name: 'reminder_id', type: sql.Int, value: reminder_id },
-        { name: 'user_id', type: sql.Int, value: user_id }
-    ]);
-
-    return result.rowsAffected[0] > 0;
+    return result.deletedCount > 0;
 };
 
 module.exports = {

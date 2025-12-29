@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/intl.dart';
 import 'package:month_year_picker/month_year_picker.dart';
 
 import '../constants.dart';
+import '../services/apiBudget.dart';
+import '../services/apiCategory.dart';
+import '../services/apiTransaction.dart';
+import '../models/category_model.dart';
+import '../models/TransactionData.dart';
+import '../utils/data_aggregator.dart';
+import '../models/monthly_expense_data.dart';
+
+// Màn hình chi tiết
 import 'expense_detail_screen.dart';
 import 'budget_detail_screen.dart';
 import 'balance_detail_screen.dart';
@@ -10,11 +19,6 @@ import 'charts_screen.dart';
 import 'reports_screen.dart';
 import 'profile_screen.dart';
 import '../widgets/add_transaction_content.dart';
-import 'package:intl/intl.dart';
-import '../utils/data_aggregator.dart';
-import '../models/TransactionData.dart';
-import '../models/mock_budget_category.dart';
-import '../models/monthly_expense_data.dart';
 
 class ExpenseTrackerScreen extends StatefulWidget {
   const ExpenseTrackerScreen({super.key});
@@ -24,121 +28,188 @@ class ExpenseTrackerScreen extends StatefulWidget {
 }
 
 class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
+  // Services
+  final TransactionService _transactionService = TransactionService();
+  final BudgetService _budgetService = BudgetService();
+  final CategoryService _categoryService = CategoryService();
+
+  // State Variables
   DateTime _selectedMonthYear = DateTime.now();
   DateTime _selectedSpecificDate = DateTime.now();
-  double get _monthlyBudget{
-    final monthlyEntry = _categoryBudgetsSetting.firstWhere((e) => e.name == 'Ngân sách hàng tháng',
-      orElse: () => MockBudgetCategory(name: 'Ngân sách hàng tháng', budget: 0.0, icon: Icons.error),
-    );
-    return monthlyEntry.budget;
-  }
   int _selectedIndex = 0;
-  // danh sách lưu giao dịch tạm thời
-  List<TransactionData> _transactions = [];
+  bool _isLoading = true;
 
-  late List<MockBudgetCategory> _categoryBudgetsSetting;
+  List<CategoryModel> _apiCategories = [];
+  List<dynamic> _apiTransactions = [];
+  Map<String, double> _budgetsMap = {};
 
   final List<Map<String, dynamic>> categories = [
-    {'label': 'Mua sắm', 'icon': Icons.shopping_cart_outlined},
-    {'label': 'Đồ ăn', 'icon': Icons.fastfood_outlined},
-    {'label': 'Quần áo', 'icon': Icons.checkroom_outlined},
-    {'label': 'Nhà ở', 'icon': Icons.home_outlined},
-    {'label': 'Sức khỏe', 'icon': Icons.favorite_border},
-    {'label': 'Học tập', 'icon': Icons.book_outlined},
-    {'label': 'Du lịch', 'icon': Icons.flight_outlined},
-    {'label': 'Giải trí', 'icon': Icons.videogame_asset_outlined},
-    {'label': 'Sửa chữa', 'icon': Icons.build_outlined},
-    {'label': 'Sắc đẹp', 'icon': Icons.spa_outlined},
-    {'label': 'Điện thoại', 'icon': Icons.phone_android_outlined},
-    {'label': 'Cài đặt', 'icon': Icons.settings_outlined, 'isSetting': true},
+    {'id': '658123456789012345678001', 'label': 'Mua sắm', 'icon': Icons.shopping_cart_outlined.codePoint},
+    {'id': '658123456789012345678002', 'label': 'Đồ ăn', 'icon': Icons.fastfood_outlined.codePoint},
+    {'id': '658123456789012345678003', 'label': 'Quần áo', 'icon': Icons.checkroom_outlined.codePoint},
+    {'id': '658123456789012345678004', 'label': 'Nhà ở', 'icon': Icons.home_outlined.codePoint},
+    {'id': '658123456789012345678005', 'label': 'Sức khỏe', 'icon': Icons.favorite_border.codePoint},
+    {'id': '658123456789012345678006', 'label': 'Học tập', 'icon': Icons.book_outlined.codePoint},
+    {'id': '658123456789012345678007', 'label': 'Du lịch', 'icon': Icons.flight_outlined.codePoint},
+    {'id': '658123456789012345678008', 'label': 'Giải trí', 'icon': Icons.videogame_asset_outlined.codePoint},
+    {'id': '658123456789012345678009', 'label': 'Sửa chữa', 'icon': Icons.build_outlined.codePoint},
+    {'id': '658123456789012345678010', 'label': 'Sắc đẹp', 'icon': Icons.spa_outlined.codePoint},
+    {'id': '658123456789012345678011', 'label': 'Điện thoại', 'icon': Icons.phone_android_outlined.codePoint},
+    {'label': 'Cài đặt', 'icon': Icons.settings_outlined.codePoint, 'isSetting': true},
   ];
-
-  // Định nghĩa list _pages trong initState để truy cập context
-  late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
-    _categoryBudgetsSetting = [
-      MockBudgetCategory(name: 'Ngân sách hàng tháng', budget: 2000000.0, icon: Icons.remove_circle),
-      MockBudgetCategory(name: 'Mua sắm', budget: 500000.0, icon: Icons.shopping_cart),
-      MockBudgetCategory(name: 'Đồ ăn', budget: 800000.0, icon: Icons.fastfood),
-      MockBudgetCategory(name: 'Quần áo', budget: 200000.0, icon: Icons.checkroom),
-      MockBudgetCategory(name: 'Nhà ở', budget: 1500000.0, icon: Icons.home),
-      MockBudgetCategory(name: 'Sức khỏe', budget: 300000.0, icon: Icons.favorite),
-      MockBudgetCategory(name: 'Học tập', budget: 0.0, icon: Icons.book_online),
-      MockBudgetCategory(name: 'Du lịch', budget: 0.0, icon: Icons.flight),
-      MockBudgetCategory(name: 'Giải trí', budget: 0.0, icon: Icons.videogame_asset),
-      MockBudgetCategory(name: 'Sửa chữa', budget: 0.0, icon: Icons.build),
-      MockBudgetCategory(name: 'Sắc đẹp', budget: 0.0, icon: Icons.spa),
-      MockBudgetCategory(name: 'Điện thoại', budget: 0.0, icon: Icons.phone_android),
-    ];
-    _pages = [
-      _buildHomeBody(context),
-      const ChartsScreen(),
-      const ProfileScreen(),
-    ];
-    _transactions.add(TransactionData(id: 't1', title: 'Ăn tối nhà hàng X', amount: 250000.0, category: 'Đồ ăn', categoryIcon: Icons.fastfood, type: TransactionType.expense, date: DateTime(2025, 11, 4), note: 'Ăn tối nhà hàng X'));
-    _transactions.add(TransactionData(id: 't2', title: 'Đi siêu thị', amount: 248000.0, category: 'Mua sắm', categoryIcon: Icons.shopping_cart, type: TransactionType.expense, date: DateTime(2025, 11, 2), note: 'Đi siêu thị'));
-    _transactions.add(TransactionData(id: 't3', title: 'Tiền trọ', amount: 1834000.0, category: 'Nhà ở', categoryIcon: Icons.home, type: TransactionType.expense, date: DateTime(2025, 10, 31), note: 'Tiền trọ'));
-    _transactions.add(TransactionData(id: 't4', title: 'Đi chợ', amount: 25000.0, category: 'Đồ ăn', categoryIcon: Icons.fastfood, type: TransactionType.expense, date: DateTime(2025, 10, 2), note: 'Đi chợ'));
-    _transactions.add(TransactionData(id: 't5', title: 'Cafe với bạn', amount: 75000.0, category: 'Đồ ăn', categoryIcon: Icons.fastfood, type: TransactionType.expense, date: DateTime(2025, 9, 15), note: 'Cafe với bạn'));
-    _transactions.sort((a, b) => b.date.compareTo(a.date));
+    _fetchData();
   }
 
-  List<TransactionData> get _filteredTransactions {
-    return _transactions.where((tx) {
-      return tx.date.year == _selectedMonthYear.year &&
-          tx.date.month == _selectedMonthYear.month;
-    }).toList();
+  Future<void> _fetchData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    String period = DateFormat('yyyy-MM').format(_selectedMonthYear);
+    try {
+      // 1. Lấy danh mục trước để đảm bảo có ID so khớp
+      final dynamic resultsRaw = await _categoryService.getCategories();
+
+      List<CategoryModel> fetchedCats = [];
+      if (resultsRaw is List) {
+        fetchedCats = resultsRaw.map((e) => e as CategoryModel).toList();
+      }
+
+      if (fetchedCats.isEmpty) {
+        debugPrint("Server trống, bắt đầu khởi tạo...");
+        await _initializeDefaultCategoriesOnServer();
+        final dynamic reloadCats = await _categoryService.getCategories();
+        if (reloadCats is List) {
+          _apiCategories = reloadCats.map((e) => e as CategoryModel).toList();
+        }
+      } else {
+        _apiCategories = fetchedCats;
+      }
+
+      final results = await Future.wait([
+        _budgetService.getBudgets(period),
+        _transactionService.getTransactions(),
+      ]);
+      await DataAggregator.refreshData();
+
+      if (mounted) {
+        setState(() {
+          // 1. Xử lý Giao dịch (Transactions)
+          _apiTransactions = results[1] as List<dynamic>;
+          debugPrint("Đã tải được ${_apiTransactions.length} giao dịch từ Server");
+
+          // 2. Xử lý Ngân sách (Budgets)
+          final budgetList = results[0] as List<dynamic>;
+          double tempTotal = 0;
+          Map<String, double> tempMap = {};
+          for (var b in budgetList) {
+            if (b != null) {
+              double amount = (b['BudgetAmount'] as num?)?.toDouble() ?? 0.0;
+              String catId = b['category_id']?.toString() ?? 'OTHER';
+              if (catId == '000000000000000000000000') {
+                tempTotal = amount;
+                tempMap['TOTAL'] = amount;
+              } else {
+                tempMap[catId] = amount;
+              }
+            }
+          }
+          _budgetsMap = tempMap;
+          _budgetsMap['TOTAL'] = tempTotal;
+
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("LỖI TẢI DỮ LIỆU: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-  // tổng Chi tiêu của tháng đã chọn
-  String get _monthlyExpense {
-    double total = 0.0;
-    for (var tx in _filteredTransactions) {
-      total += tx.amount;
+
+  Future<void> _initializeDefaultCategoriesOnServer() async {
+    debugPrint("Đang khởi tạo danh mục mặc định lên Server...");
+    final dynamic currentRaw = await _categoryService.getCategories();
+    List<String> existingNames = [];
+    if (currentRaw is List) {
+      existingNames = currentRaw.map((e) => (e as CategoryModel).name.toLowerCase()).toList();
     }
 
-    final formatter = NumberFormat.currency(
-      locale: 'vi_VN',
-      symbol: '',
-      decimalDigits: 0,
-    );
-    return formatter.format(total);
+    for (var cat in categories) {
+      if (cat['isSetting'] == true) continue;
+
+      String label = cat['label'];
+      if (existingNames.contains(label.toLowerCase())) {
+        debugPrint("Danh mục '$label' đã tồn tại, bỏ qua.");
+        continue;
+      }
+
+      try {
+        await _categoryService.createCategory(
+          label,
+          cat['icon'] is int ? cat['icon'] : (cat['icon'] as IconData).codePoint,
+        );
+      } catch (e) {
+        debugPrint("Lỗi khi đẩy danh mục ${cat['label']}: $e");
+      }
+    }
+
+    final results = await _categoryService.getCategories();
+    if (mounted && results is List) {
+      setState(() {
+        _apiCategories =  results.map((e) => e as CategoryModel).toList();
+      });
+    }
+  }
+
+  double get _totalBudgetAmount {
+    if (_budgetsMap.containsKey('TOTAL')) {
+      return _budgetsMap['TOTAL']!;
+    }
+    return _budgetsMap.values.fold(0.0, (sum, value) => sum + value);
+  }
+
+  List<dynamic> get _filteredTransactions {
+    return _apiTransactions.where((tx) {
+      DateTime date = DateTime.parse(tx['date']);
+      return date.year == _selectedMonthYear.year &&
+          date.month == _selectedMonthYear.month;
+    }).toList()..sort((a, b) => b['date'].compareTo(a['date']));
+  }
+
+  double get _totalMonthlyExpense {
+    return _filteredTransactions.fold(0.0, (sum, item) => sum + (item['amount'] as num).toDouble());
+  }
+
+  double get _currentMonthBudget => _budgetsMap['TOTAL'] ?? 0.0;
+
+  String _formatAmount(double amount) {
+    return NumberFormat.currency(locale: 'vi_VN', symbol: '', decimalDigits: 0).format(amount);
   }
 
   List<MonthlyExpenseData> _aggregateMonthlyData(){
     //tạo map nhóm theo 'YYYY-mm'
-    final Map<String, List<TransactionData>> grouped = {};
-    for(var tx in _transactions){
-      final key = DateFormat('yyyy-MM').format(tx.date);
+    final Map<String, List<dynamic>> grouped = {};
+    for(var tx in _apiTransactions){
+      final key = DateFormat('yyyy-MM').format(DateTime.parse(tx['date']));
       if(!grouped.containsKey(key)){
         grouped[key] = [];
       }
       grouped[key]!.add(tx);
     }
-    final double budgetToUse = _monthlyBudget;
-    List<MonthlyExpenseData> aggregateData = [];
-    grouped.forEach((key, transactions){
-      final parts = key.split('-');
-      final year = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
 
-      double totalExpense = 0.0;
-      for(var tx in transactions){
-        totalExpense += tx.amount;
-      }
-
-      aggregateData.add(MonthlyExpenseData(
-        month: month,
-        year: year,
-        expense: totalExpense,
-        balance: budgetToUse - totalExpense,
-      ));
-    });
-
-    aggregateData.sort((a, b) => (b.year*12 + b.month).compareTo(a.year*12 + a.month));
-    return aggregateData;
+    return grouped.entries.map((entry) {
+      final parts = entry.key.split('-');
+      double totalExp = entry.value.fold(0.0, (sum, tx) => sum + (tx['amount'] as num).toDouble());
+      return MonthlyExpenseData(
+        month: int.parse(parts[1]),
+        year: int.parse(parts[0]),
+        expense: totalExp,
+        balance: _currentMonthBudget - totalExp,
+      );
+    }).toList()..sort((a, b) => (b.year * 12 + b.month).compareTo(a.year * 12 + a.month));
   }
 
   // Hàm xử lý khi chọn tab
@@ -222,39 +293,53 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
   }
 
   // hàm để thêm danh mục mới vào list categories và budget list
-  void _addNewCategory(Map<String, dynamic> newCategory){
-    setState(() {
-      // thêm vào ds danh mục
-      // chèn danh mục mới trước cài đặt
-      int settingIndex = categories.indexWhere((cat) => cat['label'] == 'Cài đặt');
-      if(settingIndex != -1){
-        categories.insert(settingIndex, newCategory);
-      } else{
-        categories.add(newCategory);
-      }
+  void _addNewCategory(Map<String, dynamic> newCategoryData) async {
+    setState(() => _isLoading = true);
+    try {
+      // 1. Gọi API Service để lưu danh mục mới vào Database
+      final response = await _categoryService.createCategory(
+        newCategoryData['label'],
+        (newCategoryData['icon'] as IconData).codePoint,
+      );
 
-      // them vao danh sach ngan sach
-      bool existsInBudget = _categoryBudgetsSetting.any((e) => e.name == newCategory['label']);
-      if (!existsInBudget){
-        _categoryBudgetsSetting.add(
-          MockBudgetCategory(
-            name: newCategory['label'] as String,
-            budget: 0.0,
-            icon: newCategory['icon'] as IconData,
-          ),
+      if (response != null) {
+        // 2. Sau khi thêm thành công, gọi lại hàm fetch để đồng bộ dữ liệu
+        await _fetchData();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Đã thêm danh mục: ${newCategoryData['label']}')),
         );
       }
+    } catch (e) {
+      debugPrint("Lỗi khi thêm danh mục: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã thêm danh mục: ${newCategory['label']}')),
+        const SnackBar(content: Text('Không thể thêm danh mục. Vui lòng thử lại.')),
       );
-    });
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   // Hàm hiển thị giao diện thêm giao dịch
-  void _showAddTransactionSheet() async{
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+  void _showAddTransactionSheet() async {
+    final List<Map<String, dynamic>> mapping = _apiCategories.map<Map<String, dynamic>>((c) => {
+      'id': c.id,
+      'label': c.name,
+      'icon': c.iconCodePoint,
+      'isSetting': false,
+    }).toList();
+
+    mapping.add({
+      'id': 'SETTING',
+      'label': 'Cài đặt',
+      'icon': Icons.settings_outlined.codePoint,
+      'isSetting': true,
+    });
+
+    final result = await showModalBottomSheet<dynamic>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
         return SafeArea(
           child: Container(
@@ -263,35 +348,35 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
             ),
-            child: AddTransactionContent(categories: categories),
+            child: AddTransactionContent(categories: mapping),
           ),
         );
       },
     );
 
-    if(result != null){
-      if(result.containsKey('newCategory')){
-        _addNewCategory(result['newCategory'] as Map<String, dynamic>);
-      } else if(result.containsKey('newTransaction')) {
-        final newTransaction = result['newTransaction'] as TransactionData;
-
-        setState(() {
-          _transactions.add(newTransaction);
-          _transactions.sort((a, b) => b.date.compareTo(a.date));
-          updateTransactionData(_transactions);
-        });
+    if(result == true){
+      await _fetchData();
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Đã thêm giao dịch: ${newTransaction.category}'),
-            backgroundColor: Colors.green,
-          ),
+          const SnackBar(content: Text('Giao dịch đã được lưu!'), backgroundColor: Colors.green),
         );
       }
     }
   }
 
+  // Xoa giao dich
+  void _deleteTransaction(String id) async {
+    final result = await _transactionService.deleteTransaction(id);
+    if (result['success']) {
+      _fetchData();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã xóa giao dịch thành công')),
+      );
+    }
+  }
+
   // Xóa / sửa giao dịch
-  void _showEditOption(TransactionData tx, int index){
+  void _showEditOption(dynamic tx){
     showModalBottomSheet(
       context: context,
       builder: (BuildContext context){
@@ -304,7 +389,7 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
                 title: const Text('Sửa giao dịch'),
                 onTap: (){
                   Navigator.pop(context);
-                  _showEditTransactionSheet(tx, index);
+                  _showEditTransactionSheet(tx);
                 },
               ),
               ListTile(
@@ -312,7 +397,7 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
                 title: const Text('Xóa giao dịch'),
                 onTap: () {
                   Navigator.pop(context);
-                  _deleteTransaction(index);
+                  _deleteTransaction(tx['_id']);
                 },
               ),
             ],
@@ -322,10 +407,24 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
     );
   }
 
-  void _showEditTransactionSheet(TransactionData oldTx, int index) async {
-    final editedTransaction = await showModalBottomSheet<TransactionData>(
+  void _showEditTransactionSheet(dynamic tx) async {
+    final List<Map<String, dynamic>> mapping = _apiCategories.map<Map<String, dynamic>>((c) => {
+      'id': c.id,
+      'label': c.name,
+      'icon': c.iconCodePoint,
+      'isSetting': false,
+    }).toList();
+
+    mapping.add({
+      'label': 'Cài đặt',
+      'icon': Icons.settings_outlined.codePoint,
+      'isSetting': true,
+    });
+
+    final result = await showModalBottomSheet<dynamic>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
         return SafeArea(
           child: Container(
@@ -335,68 +434,61 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
               borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
             ),
             child: AddTransactionContent(
-              transaction: oldTx,
+              transaction: tx,
               isEditing: true,
-              categories: categories,
+              categories: mapping,
             ),
           ),
         );
       },
     );
 
-    if (editedTransaction != null) {
-      setState(() {
-        _transactions[index] = editedTransaction; // CẬP NHẬT GIAO DỊCH ĐÃ SỬA
-        _transactions.sort((a, b) => b.date.compareTo(a.date));
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã sửa giao dịch thành công.'), backgroundColor: Colors.blue),
-      );
+    if (result == true) {
+      await _fetchData();
     }
   }
 
-  void _deleteTransaction(int index) {
-    final deletedTx = _transactions[index];
-    setState(() {
-      _transactions.removeAt(index);
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã xóa ${deletedTx.category}'),
-        backgroundColor: Colors.orange,
-        action: SnackBarAction(
-          label: 'Hoàn tác',
-          onPressed: () {
-            setState(() {
-              _transactions.insert(index, deletedTx);
-              _transactions.sort((a, b) => b.date.compareTo(a.date));
-            });
-          },
+  //Widget xây dựng thêm 1 item giao dịch
+  Widget _buildTransactionItem(dynamic tx){
+
+    DateTime txDate = DateTime.parse(tx['date']);
+    final String txCategoryId = (tx['category_id'] ?? tx['categoryId'] ?? "").toString();
+    final String txTitle = (tx['title'] ?? "").toString();
+
+    print("TX ID: $txCategoryId --- CAT IDs: ${_apiCategories.map((e) => e.id).toList()}");
+
+    final category = _apiCategories.firstWhere(
+          (c) => c.id == txCategoryId, // Ưu tiên khớp ID thật từ Server
+      orElse: () => _apiCategories.firstWhere(
+            (c) => c.name == txTitle, // Nếu ID không khớp (do ID cũ/giả), khớp theo Tên
+        orElse: () => CategoryModel(
+            id: '',
+            name: txTitle.isNotEmpty ? txTitle : 'Khác',
+            iconCodePoint: 58248
         ),
       ),
     );
-  }
 
-  //Widget xây dựng thêm 1 item giao dịch
-  Widget _buildTransactionItem(TransactionData tx, int index){
-    final category = categories.firstWhere((cat) => cat['label'] == tx.category,
-      orElse: () => {'label': 'Khác', 'icon': Icons.category});
-
-    final day = tx.date.day;
-    final month = tx.date.month;
-    final weekdayIndex = tx.date.weekday;
+    final day = txDate.day;
+    final month = txDate.month;
+    final weekdayIndex = txDate.weekday;
     final weekdayName = weekdayIndex == 7 ? 'Chủ nhật' : 'Thứ ${weekdayIndex + 1}';
     final formattedDateLine = '$day thg $month, $weekdayName';
 
-    final displayNote = tx.note.isNotEmpty ? tx.note : tx.category;
+    final String displayNote = (tx['note'] != null && tx['note'].toString().isNotEmpty)
+        ? tx['note']
+        : category.name;
 
     final formatter = NumberFormat.currency(
       locale: 'vi_VN',
       symbol: '',
       decimalDigits: 0,
     );
-    final double amountValue = tx.amount;
-    final formattedAmount = formatter.format(amountValue);
+
+    final formattedAmount = formatter.format(tx['amount']);
+    final int iconCode = category.iconCodePoint is int
+        ? category.iconCodePoint
+        : int.tryParse(category.iconCodePoint.toString()) ?? 58248;
 
     return Column(
       children: [
@@ -412,11 +504,19 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
         ),
 
         InkWell(
-          onLongPress: () => _showEditOption(tx, index),
+          onLongPress: () => _showEditOption(tx),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: kPrimaryPink.withOpacity(0.1),
-              child: Icon(category['icon'] as IconData, color: kPrimaryPink),
+              child: Icon(
+                  IconData(
+                    category.iconCodePoint is int
+                        ? category.iconCodePoint
+                        : int.tryParse(category.iconCodePoint.toString()) ?? 58248,
+                    fontFamily: 'MaterialIcons',
+                  ),
+                  color: kPrimaryPink
+              ),
             ),
             title: Text(displayNote, style: const TextStyle(fontSize: 16)),
             trailing: Text(
@@ -437,8 +537,9 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
         monthlyData: _aggregateMonthlyData(),
       );
     } else if (label == 'Ngân sách') {
+      String period = DateFormat('yyyy-MM').format(_selectedMonthYear);
       destinationScreen = BudgetDetailScreen(
-        initialCategoryBudgets: _categoryBudgetsSetting,
+          period: period
       );
     } else if (label == 'Số dư') {
       destinationScreen = const BalanceDetailScreen();
@@ -449,21 +550,13 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
     return InkWell(
       onTap: () async {
         // Chuyển sang màn hình tương ứng đã chọn
-        final result = await Navigator.push(
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => destinationScreen,
           ),
         );
-        if(result is List<MockBudgetCategory>){
-          setState((){
-            _categoryBudgetsSetting = result;
-          });
-        }
-        else if(result is double && label == 'Ngân sách'){
-          setState(() {
-          });
-        }
+        _fetchData();
       },
       customBorder: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(4),
@@ -509,8 +602,9 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
 
   Widget _buildHomeBody(BuildContext context) {
     final transactionsToDisplay = _filteredTransactions;
-    final double budget = _monthlyBudget;
-    final double expenseValue = double.tryParse(_monthlyExpense.replaceAll('.', '')) ?? 0.0;
+
+    final double budget = _currentMonthBudget;
+    final double expenseValue = _totalMonthlyExpense;
     final double balanceValue = budget - expenseValue;
 
     final formatter = NumberFormat.currency(locale: 'vi_VN', symbol: '', decimalDigits: 0);
@@ -559,7 +653,7 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
                   ),
                   Row(
                     children: <Widget>[
-                      _buildStatColumn('Chi tiêu', _monthlyExpense, context),
+                      _buildStatColumn('Chi tiêu', formatter.format(expenseValue), context),
                       const SizedBox(width: 18),
                       _buildStatColumn('Ngân sách', formattedBudget, context),
                       const SizedBox(width: 18),
@@ -579,17 +673,17 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
             color: kLightPinkBackground,
             child: transactionsToDisplay.isEmpty
                 ? Center(
-                    child: Text('Chưa có giao dịch trong ${DateUtils.dateOnly(_selectedMonthYear).month}!', style: TextStyle(color: Colors.grey)),
-                )
+              child: Text('Chưa có giao dịch trong ${DateUtils.dateOnly(_selectedMonthYear).month}!', style: TextStyle(color: Colors.grey)),
+            )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    itemCount: transactionsToDisplay.length,
-                    itemBuilder: (context, index) {
-                      final tx = transactionsToDisplay[index];
-                      final originalIndex = _transactions.indexOf(tx);
-                      return _buildTransactionItem(tx, originalIndex);
-                    },
-                ),
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              itemCount: transactionsToDisplay.length,
+              itemBuilder: (context, index) {
+                final tx = transactionsToDisplay[index];
+                final originalIndex = _apiTransactions.indexOf(tx);
+                return _buildTransactionItem(tx);
+              },
+            ),
 
           ),
         ),
@@ -600,6 +694,9 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
   // 4. Build Function
   @override
   Widget build(BuildContext context) {
+
+    print("DEBUG: Số lượng giao dịch trong state: ${_apiTransactions.length}");
+    print("DEBUG: Số lượng giao dịch sau khi lọc: ${_filteredTransactions.length}");
 
     Widget currentBody;
     PreferredSizeWidget currentAppBar;
@@ -641,8 +738,10 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
       );
     } else if (_selectedIndex == 2) {
       currentBody = ReportsScreen(
-        transactions: _transactions,
-        budgetCategories: _categoryBudgetsSetting,
+        transactions: _apiTransactions,
+        budgetsMap: {
+          'TOTAL': _totalBudgetAmount,
+        },
       );
       currentAppBar = AppBar(
         backgroundColor: Colors.white,
@@ -669,7 +768,9 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
       appBar: currentAppBar,
 
       // 5. Body - Hiển thị màn hình tương ứng với tab được chọn
-      body: currentBody,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryPink))
+          : currentBody,
 
       // 6. Floating Action Button (Nút + tròn)
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,

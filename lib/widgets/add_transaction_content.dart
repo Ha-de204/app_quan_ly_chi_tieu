@@ -3,10 +3,12 @@ import '../constants.dart';
 import 'package:math_expressions/math_expressions.dart';
 import '../screens/setting_category_screen.dart';
 import '../models/TransactionData.dart';
+import '../services/apiTransaction.dart';
+import '../services/apiCategory.dart';
 
 class AddTransactionContent extends StatefulWidget {
   final List<Map<String, dynamic>> categories;
-  final TransactionData? transaction;
+  final dynamic transaction;
   final bool isEditing;
   const AddTransactionContent({
     super.key,
@@ -15,15 +17,16 @@ class AddTransactionContent extends StatefulWidget {
     required this.categories,
   });
 
-
   @override
   State<AddTransactionContent> createState() => _AddTransactionContentState();
 }
 
 class _AddTransactionContentState extends State<AddTransactionContent> {
+  final TransactionService _transactionService = TransactionService();
   int _selectedIndex = -1;
   String _displayValue = '0';
   DateTime _selectedDate = DateTime.now();
+  bool _isSaving = false;
 
   final TextEditingController _noteController = TextEditingController();
   final Map<int, GlobalKey> _categoryKeys = {};
@@ -40,15 +43,38 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
     super.initState();
     // tải dl khi ở chế độ sửa
     if(widget.isEditing && widget.transaction != null){
-      final tx = widget.transaction!;
-      _displayValue = tx.amount.toString();
-      _selectedDate = tx.date;
-      _noteController.text = tx.note;
-      // tìm index danh mục cũ
-      final oldIndex = widget.categories.indexWhere((cat) => cat['label'] == tx.category);
-      if(oldIndex != -1){
-        _selectedIndex = oldIndex;
+      final tx = widget.transaction;
+
+      // 1. Ép kiểu amount an toàn
+      double amt = double.tryParse(tx['amount'].toString()) ?? 0.0;
+      _displayValue = amt % 1 == 0 ? amt.toInt().toString() : amt.toString();
+
+      // 2. Xử lý ngày tháng
+      if (tx['date'] != null) {
+        _selectedDate = DateTime.parse(tx['date'].toString());
       }
+
+      _noteController.text = tx['note']?.toString() ?? '';
+
+      // 3. Tìm Index của danh mục (Quan trọng nhất)
+      // Phải đảm bảo so sánh chuỗi toString() để tránh lỗi khác kiểu dữ liệu
+      final txCatId = (tx['category_id'] ?? tx['categoryId'])?.toString();
+
+      int foundIndex = widget.categories.indexWhere((cat) {
+        final catId = (cat['id'] ?? cat['_id'])?.toString();
+        return catId != null && catId == txCatId;
+      });
+
+      // Nếu không tìm thấy bằng ID, thử tìm bằng tên
+      if (foundIndex == -1) {
+        foundIndex = widget.categories.indexWhere(
+                (cat) => cat['label'].toString().toLowerCase() == tx['category_name'].toString().toLowerCase()
+        );
+      }
+
+      setState(() {
+        _selectedIndex = foundIndex != -1 ? foundIndex : 0;
+      });
     }
   }
 
@@ -56,6 +82,92 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
   void dispose() {
     _noteController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveTransaction() async {
+    if (_selectedIndex == -1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng chọn danh mục!'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    debugPrint("--- BẮT ĐẦU LƯU GIAO DỊCH ---");
+
+    if (_needsCalculation()) {
+      _onKeyPressed('check');
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
+    if (_displayValue == 'Lỗi' || double.tryParse(_displayValue) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Số tiền không hợp lệ!')));
+      setState(() => _isSaving = false);
+      return;
+    }
+
+    final double amount = double.tryParse(_displayValue) ?? 0.0;
+    final selectedCategory = widget.categories[_selectedIndex];
+    print("DEBUG: Category đang chọn là: $selectedCategory");
+
+    final String categoryId = (selectedCategory['_id'] ?? selectedCategory['id'] ?? "").toString();
+    if (categoryId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Danh mục này chưa được cấp ID!'), backgroundColor: Colors.orange),
+      );
+      setState(() => _isSaving = false);
+      return;
+    }
+
+    try {
+      debugPrint("Đang gọi API với ID Danh mục: $categoryId, Số tiền: $amount");
+      Map<String, dynamic> response;
+      if (widget.isEditing) {
+        // Cập nhật giao dịch hiện có
+        response = await _transactionService.updateTransaction(
+          widget.transaction['_id'].toString(),
+          categoryId: categoryId,
+          amount: amount,
+          type: "expense",
+          date: _selectedDate.toIso8601String(),
+          title: selectedCategory['label'].toString(),
+          note: _noteController.text,
+        );
+      } else {
+        // Tạo giao dịch mới
+        response = await _transactionService.createTransaction(
+          categoryId: categoryId,
+          amount: amount,
+          type: "expense",
+          date: _selectedDate.toIso8601String(),
+          title: selectedCategory['label'].toString(),
+          note: _noteController.text,
+        );
+      }
+
+      debugPrint("Kết quả Server trả về: $response");
+
+      if (response != null && (response['success'] == true || response['transaction_id'] != null)) {
+        debugPrint("Lưu thành công!");
+        if (mounted) Navigator.pop(context, true);
+      } else {
+        String msg = response['message'] ?? 'Server từ chối lưu (có thể thiếu User ID)';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(response['message'] ?? 'Có lỗi xảy ra')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("LỖI NGHIÊM TRỌNG KHI LƯU: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không thể kết nối đến máy chủ. Hãy thử lại sau!')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   // HÀM HIỂN THỊ DATE PICKER
@@ -95,14 +207,25 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
         ),
       );
 
-      if (newCategory != null) {
-        Navigator.pop(context, {'newCategory': newCategory});
+      if (newCategory == true || newCategory == "refresh") {
+        if (mounted) {
+          Navigator.pop(context, true);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Danh mục đã được cập nhật! Vui lòng chọn lại.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
 
     } else {
       setState(() {
         _selectedIndex = index;
-        _displayValue = '0';
+        if (!widget.isEditing) {
+          _displayValue = '0';
+        }
       });
 
       final targetKey = _categoryKeys[index];
@@ -169,8 +292,18 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
     });
   }
 
-  Widget _buildCategoryItem(BuildContext context, int index, String label, IconData icon, {bool isSetting = false}){
+  Widget _buildCategoryItem(BuildContext context, int index, String label, dynamic iconData, {bool isSetting = false}){
     final bool isSelected = _selectedIndex == index && !isSetting;
+
+    IconData displayIcon;
+    if (iconData is IconData) {
+      displayIcon = iconData;
+    } else if (iconData != null) {
+      int? codePoint = int.tryParse(iconData.toString());
+      displayIcon = IconData(codePoint ?? 58248, fontFamily: 'MaterialIcons');
+    } else {
+      displayIcon = Icons.category;
+    }
 
     return InkWell(
       onTap: (){
@@ -180,7 +313,7 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            icon,
+            displayIcon,
             size: 30,
             color: isSelected ? kPrimaryPink : Colors.grey[700]
           ),
@@ -200,12 +333,22 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
     if (icon == Icons.check) key = 'check';
     if (icon == Icons.backspace_outlined) key = 'D';
 
-    if(isCalendarButton) {
-      return Expanded(
-        child: Padding(
+      return Padding(
           padding: const EdgeInsets.all(4.0),
           child: InkWell(
-            onTap: onTap,
+            onTap: () {
+              print("Đã nhấn phím: ${icon == Icons.check ? 'DẤU TÍCH' : label}");
+              if (onTap != null) {
+                onTap();
+              } else if (icon == Icons.check) {
+                if (!_isSaving) {
+                  print("Đang gọi hàm _saveTransaction...");
+                  _saveTransaction();
+                }
+              } else {
+                _onKeyPressed(label == '' ? (icon == Icons.backspace_outlined ? 'D' : '') : label);
+              }
+            },
             customBorder: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(5),
             ),
@@ -213,7 +356,7 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
             child: Container(
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: (icon == Icons.check) ? kPrimaryPink : Colors.white,
                 borderRadius: BorderRadius.circular(5),
                 boxShadow: [
                   BoxShadow(
@@ -224,58 +367,30 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.calendar_month_outlined, color: Colors.black, size: 24),
-                  const SizedBox(height: 2),
-                  Text(
-                    formattedDateShort,
-                    style: const TextStyle(fontSize: 10, color: Colors.black, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
+              child: _isSaving && icon == Icons.check
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                      : (isCalendarButton
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.calendar_month_outlined, color: Colors.black, size: 24),
+                      const SizedBox(height: 2),
+                      Text(
+                        formattedDateShort,
+                        style: const TextStyle(fontSize: 10, color: Colors.black, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  )
+                  : (icon != null
+                  ? Icon(icon, color: icon == Icons.check ? Colors.white : Colors.black, size: 24)
+                  : Text(label, style: TextStyle(fontSize: 24, fontWeight: isOperation ? FontWeight.bold : FontWeight.w500, color: textColor)))),
             ),
           ),
-        ),
-      );
-    }
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.all(4.0),
-        child: InkWell(
-          onTap: onTap ?? () => _onKeyPressed(key),
-          customBorder: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(5),
-          ),
-          child: Container(
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.3),
-                  spreadRadius: 1,
-                  blurRadius: 3,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: icon != null
-                ? Icon(icon, color: icon == Icons.check ? Colors.white : Colors.black, size:24)
-                : Text(
-              label,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: isOperation ? FontWeight.bold : FontWeight.w500,
-                color: textColor,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+        );
   }
 
   // Widget riêng chứa Ghi chú và bàn phím
@@ -321,7 +436,7 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
 
         //Bàn phím
         SizedBox(
-          height: MediaQuery.of(context).size.height * 0.25,
+          height: MediaQuery.of(context).size.height * 0.3,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Column(
@@ -329,7 +444,10 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
                   Expanded(
                     child: Row(
                       children: [
-                        _buildKeyboardButton('7'), _buildKeyboardButton('8'), _buildKeyboardButton('9'), _buildKeyboardButton('+', isOperation: true),
+                        Expanded(child: _buildKeyboardButton('7')),
+                        Expanded(child: _buildKeyboardButton('8')),
+                        Expanded(child: _buildKeyboardButton('9')),
+                        Expanded(child: _buildKeyboardButton('+', isOperation: true)),
                       ],
                     ),
                   ),
@@ -337,7 +455,10 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
                   Expanded(
                     child: Row(
                       children: [
-                        _buildKeyboardButton('4'), _buildKeyboardButton('5'), _buildKeyboardButton('6'), _buildKeyboardButton('-', isOperation: true),
+                        Expanded(child: _buildKeyboardButton('4')),
+                        Expanded(child: _buildKeyboardButton('5')),
+                        Expanded(child: _buildKeyboardButton('6')),
+                        Expanded(child: _buildKeyboardButton('-', isOperation: true)),
                       ],
                     ),
                   ),
@@ -345,7 +466,10 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
                   Expanded(
                     child: Row(
                       children: [
-                        _buildKeyboardButton('1'), _buildKeyboardButton('2'), _buildKeyboardButton('3'), _buildKeyboardButton('/', isOperation: true),
+                        Expanded(child: _buildKeyboardButton('1')),
+                        Expanded(child: _buildKeyboardButton('2')),
+                        Expanded(child: _buildKeyboardButton('3')),
+                        Expanded(child: _buildKeyboardButton('/', isOperation: true)),
                       ],
                     ),
                   ),
@@ -353,44 +477,10 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
                   Expanded(
                     child: Row(
                       children: [
-                        _buildKeyboardButton('', icon: Icons.calendar_month_outlined, onTap: _selectDate, isCalendarButton: true),
-                        _buildKeyboardButton('0'),
-                        _buildKeyboardButton('', icon: Icons.backspace_outlined, onTap: () => _onKeyPressed('D')),
-                        _buildKeyboardButton('', icon: Icons.check, color:kPrimaryPink, isOperation: true, onTap: () async {
-                          if (_selectedIndex == -1) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Vui lòng chọn danh mục trước khi lưu.',), backgroundColor: Colors.red),
-                            );
-                            return;
-                          }
-
-                          if (_needsCalculation()) {
-                            _onKeyPressed('check');
-                            await Future.delayed(const Duration(milliseconds: 100));
-                          }
-
-                          if (_displayValue != 'Lỗi') {
-                            final double parsedAmount = double.tryParse(_displayValue) ?? 0.0;
-                            final selectedCategory = widget.categories[_selectedIndex];
-
-                            final transaction = TransactionData(
-                              id: widget.isEditing ? widget.transaction!.id : UniqueKey().toString(),
-                              title: selectedCategory['label'] as String,
-                              amount: parsedAmount,
-                              category: selectedCategory['label'] as String,
-                              categoryIcon: selectedCategory['icon'] as IconData,
-                              type: TransactionType.expense,
-                              date: _selectedDate,
-                              note: _noteController.text.isEmpty ? '' : _noteController.text,
-                            );
-
-                            Navigator.pop(context, {'newTransaction': transaction});
-                          } else{
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Lỗi cú pháp tính toán! Vui lòng sửa lại.'), backgroundColor: Colors.red),
-                            );
-                          }
-                        }),
+                        Expanded(child: _buildKeyboardButton('', icon: Icons.calendar_month_outlined, onTap: _selectDate, isCalendarButton: true)),
+                        Expanded(child: _buildKeyboardButton('0')),
+                        Expanded(child: _buildKeyboardButton('', icon: Icons.backspace_outlined)),
+                        Expanded(child: _buildKeyboardButton('', icon: Icons.check, isOperation: true)),
                       ],
                     ),
                   ),
@@ -429,44 +519,32 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
 
         // Body cuộn
         Expanded(
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                  child: GridView.builder(physics: const NeverScrollableScrollPhysics(),
-                      shrinkWrap: true,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 0.8,
-                      ),
-                      itemCount: widget.categories.length,
-                      itemBuilder: (context, index){
-                        //Gán GlobalKey cho item để có thể focus
-                        if (!_categoryKeys.containsKey(index)) {
-                          _categoryKeys[index] = GlobalKey();
-                        }
-                        final category = widget.categories[index];
-                        return KeyedSubtree(
-                          key: _categoryKeys[index],
-                          child: _buildCategoryItem(
-                            context,
-                            index,
-                            category['label'] as String,
-                            category['icon'] as IconData,
-                            isSetting: category['isSetting'] ?? false,
-                          ),
-                        );
-                      },
-                  ),
-                ),
-
-                if (showInputSection)
-                  const SizedBox(height: 300),
-              ],
+          child: GridView.builder(
+            physics: const ClampingScrollPhysics(),
+            padding: const EdgeInsets.all(10),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 0.8,
             ),
+            itemCount: widget.categories.length,
+            itemBuilder: (context, index) {
+              if (!_categoryKeys.containsKey(index)) {
+                _categoryKeys[index] = GlobalKey();
+              }
+              final category = widget.categories[index];
+              return KeyedSubtree(
+                key: _categoryKeys[index],
+                child: _buildCategoryItem(
+                  context,
+                  index,
+                  category['label'] as String,
+                  category['icon'],
+                  isSetting: category['isSetting'] ?? false,
+                ),
+              );
+            },
           ),
         ),
         if (showInputSection)

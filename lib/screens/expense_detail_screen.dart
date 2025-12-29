@@ -38,21 +38,32 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen>{
     return dataForYear.fold(0.0, (sum, item) => sum + item.balance);
   }
 
-  // select month
+  // select year
   Future<void> _selectYear(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+    showDialog(
       context: context,
-      initialDate: _selectedYear,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2030),
-      initialDatePickerMode: DatePickerMode.year,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Chọn năm"),
+          content: SizedBox(
+            width: 300,
+            height: 300,
+            child: YearPicker(
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2030),
+              initialDate: _selectedYear,
+              selectedDate: _selectedYear,
+              onChanged: (DateTime dateTime) {
+                setState(() {
+                  _selectedYear = dateTime;
+                });
+                Navigator.pop(context);
+              },
+            ),
+          ),
+        );
+      },
     );
-
-    if (picked != null && picked.year != _selectedYear.year) {
-      setState(() {
-        _selectedYear = DateTime(picked.year);
-      });
-    }
   }
 
   Widget _buildMonthlyRow(MonthlyExpenseData data){
@@ -121,7 +132,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen>{
 
   @override
   Widget build(BuildContext context){
-    final dataToDisplay = widget.monthlyData.where((data) => data.year == _selectedYear.year).toList();
+    final dataToDisplay = widget.monthlyData.where((data) => data.year == _selectedYear.year).toList()..sort((a, b) => b.month.compareTo(a.month));
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,

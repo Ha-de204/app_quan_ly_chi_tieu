@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import '../models/TransactionData.dart';
-import '../models/mock_budget_category.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
+import '../models/transaction_model.dart';
+import '../models/category_model.dart';
+import '../services/apiCategory.dart';
+import '../services/apiTransaction.dart';
 
 class CategoryExpense {
   final String categoryName;
@@ -18,125 +20,40 @@ class CategoryExpense {
   });
 }
 
-List<TransactionData> _currentTransactions = DUMMY_TRANSACTIONS;
-
-void updateTransactionData(List<TransactionData> transactions) {
-  _currentTransactions = transactions;
-}
-
-List<CategoryExpense> getMonthlyExpenseByCategory(DateTime monthYear) {
-  final filteredTransactions = _currentTransactions.where((tx) {
-    return tx.date.year == monthYear.year &&
-           tx.date.month == monthYear.month &&
-           tx.type == TransactionType.expense;
-  }).toList();
-
-  final Map<String, double> categoryTotals ={};
-  final Map<String, IconData> categoryIcons = {};
-
-  for(var tx in filteredTransactions) {
-    categoryTotals.update(
-      tx.category,
-          (existingAmount) => existingAmount + tx.amount,
-      ifAbsent: () => tx.amount,
-    );
-    categoryIcons[tx.category] = tx.categoryIcon;
-  }
-
-  final totalExpense = categoryTotals.values.fold(0.0, (sum, amount) => sum + amount);
-  if (totalExpense == 0.0) return [];
-
-  return categoryTotals.entries.map((entry) {
-    return CategoryExpense(
-      categoryName: entry.key,
-      totalAmount: entry.value,
-      icon: categoryIcons[entry.key]!,
-      percentage: entry.value / totalExpense,
-    );
-  }).toList()..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
-}
-
-double getTotalMonthlyExpense(DateTime monthYear) {
-  final categoryExpenses = getMonthlyExpenseByCategory(monthYear);
-  return categoryExpenses.fold(0.0, (sum, item) => sum + item.totalAmount);
-}
-
 class DataAggregator {
+  static List<dynamic> _allTransactions = [];
+  static List<CategoryModel> _allCategories = [];
   static const Color defaultPrimaryColor = Color(0xFFE91E63);
 
-  static DateTime getStartOfWeek(DateTime date){
-    int diff = date.weekday - 1;
-    if(diff<0) diff += 7;
-    return DateTime(date.year, date.month, date.day).subtract(Duration(days: diff));
-  }
+  static final TransactionService _transactionService = TransactionService();
+  static final CategoryService _categoryService = CategoryService();
 
-  static DateTime getEndOfWeek(DateTime date){
-    return getStartOfWeek(date).add(const Duration(days: 6));
-  }
+  // --- HÀM CẬP NHẬT DỮ LIỆU TỪ API ---
+  static Future<void> refreshData() async {
+    try {
+      final results = await Future.wait([
+        _transactionService.getTransactions(),
+        _categoryService.getCategories(),
+      ]);
 
-  static DateTime getStartOfMonth(DateTime date) {
-    return DateTime(date.year, date.month, 1);
-  }
+      // results[0] là danh sách dynamic từ apiTransaction
+      if (results[0] != null) {
+        _allTransactions = results[0] as List<dynamic>;
+      }
 
-  static DateTime getEndOfMonth(DateTime date) {
-    return DateTime(date.year, date.month + 1, 0);
-  }
-
-  static DateTime getStartOfYear(DateTime date) {
-    return DateTime(date.year, 1, 1);
-  }
-
-  static DateTime getEndOfYear(DateTime date) {
-    return DateTime(date.year, 12, 31);
-  }
-
-  // tìm giao dịch sớm nhất
-  static DateTime _getFirstTransactionDate() {
-    if (_currentTransactions.isEmpty) {
-      return DateTime.now().subtract(const Duration(days: 365));
+      // results[1] là danh sách dynamic từ apiCategory
+      if (results[1] != null) {
+        _allCategories = (results[1] as List)
+            .map((json) => json as CategoryModel)
+            .toList();
+      }
+      debugPrint("Aggregator: Đã tải ${_allTransactions.length} giao dịch.");
+    } catch (e) {
+      debugPrint("Lỗi khi đồng bộ dữ liệu Aggregator: $e");
     }
-    return _currentTransactions.fold(_currentTransactions.first.date,
-            (minDate, tx) => tx.date.isBefore(minDate) ? tx.date : minDate);
   }
 
-  // tính percentage
-  static List<CategoryExpense> _processExpenses(List<TransactionData> expenses) {
-    final Map<String, double> categoryTotals ={};
-    final Map<String, IconData> categoryIcons = {};
-
-    for(var tx in expenses) {
-      categoryTotals.update(
-        tx.category,
-            (existingAmount) => existingAmount + tx.amount,
-        ifAbsent: () => tx.amount,
-      );
-      categoryIcons[tx.category] = tx.categoryIcon;
-    }
-
-    final totalExpense = categoryTotals.values.fold(0.0, (sum, amount) => sum + amount);
-
-    if (totalExpense == 0.0) {
-      return [];
-    }
-
-    return categoryTotals.entries.map((entry) {
-      final amount = entry.value;
-      final percentage = amount / totalExpense;
-
-      return CategoryExpense(
-        categoryName: entry.key,
-        totalAmount: amount,
-        icon: categoryIcons[entry.key]!,
-        percentage: percentage,
-      );
-    }).toList()..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
-  }
-
-  static List<CategoryExpense> aggregateCategoryExpenses(
-      DateTime date,
-      int filterIndex, // 0: Tuần, 1: Tháng, 2: Năm
-      List<MockBudgetCategory> allCategories,
-      ) {
+  static List<CategoryExpense> aggregateCategoryExpenses(DateTime date, int filterIndex) {
     DateTime startDate;
     DateTime endDate;
 
@@ -151,20 +68,103 @@ class DataAggregator {
       endDate = getEndOfYear(date);
     }
 
-    final filteredExpenses = _currentTransactions.where((tx) {
-      final txDate = tx.date;
-      return tx.type == TransactionType.expense &&
-          (txDate.isAfter(startDate.subtract(const Duration(days: 1))) &&
-              txDate.isBefore(endDate.add(const Duration(days: 1))));
+    // Lọc giao dịch chi tiêu (Expense) trong khoảng thời gian
+    final filteredTransactions = _allTransactions.where((tx) {
+      final DateTime txDate = DateTime.parse(tx['date']);
+      final String type = (tx['type'] ?? 'expense').toString().toLowerCase();
+
+      return type == 'expense' &&
+          txDate.isAfter(startDate.subtract(const Duration(seconds: 1))) &&
+          txDate.isBefore(endDate.add(const Duration(seconds: 1)));
     }).toList();
 
-    return _processExpenses(filteredExpenses);
+    return _processExpenses(filteredTransactions);
+  }
+
+  static List<CategoryExpense> _processExpenses(List<dynamic> expenses) {
+
+    final Map<String, double> nameTotals = {};
+
+    for (var tx in expenses) {
+      final double amount = (tx['amount'] as num?)?.toDouble() ?? 0.0;
+      final String catId = (tx['category_id'] ?? tx['categoryId'] ?? "").toString();
+      final String catNameFromTx = (tx['category_name'] ?? tx['title'] ?? "Khác").toString();
+
+      final matchedCat = _allCategories.firstWhere(
+            (c) => c.id == catId,
+        orElse: () => _allCategories.firstWhere(
+              (c) => c.name.toLowerCase() == catNameFromTx.toLowerCase(),
+          orElse: () => CategoryModel(id: '', name: catNameFromTx, iconCodePoint: 58248),
+        ),
+      );
+
+      nameTotals.update(
+        matchedCat.name,
+            (existing) => existing + amount,
+        ifAbsent: () => amount,
+      );
+
+    }
+
+    final totalExpense = nameTotals.values.fold(0.0, (sum, amt) => sum + amt);
+    if (totalExpense == 0.0) return [];
+
+    return nameTotals.entries.map((entry) {
+      final categoryInfo = _allCategories.firstWhere(
+            (c) => c.name == entry.key,
+        orElse: () => CategoryModel(id: '', name: entry.key, iconCodePoint: 58248),
+      );
+
+      return CategoryExpense(
+        categoryName: entry.key,
+        totalAmount: entry.value,
+        icon: IconData(categoryInfo.iconCodePoint ?? 58248, fontFamily: 'MaterialIcons'),
+        percentage: entry.value / totalExpense,
+      );
+    }).toList()..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+  }
+
+  static DateTime getStartOfWeek(DateTime date){
+    int diff = date.weekday - 1;
+    if(diff<0) diff += 7;
+    return DateTime(date.year, date.month, date.day).subtract(Duration(days: diff));
+  }
+
+  static DateTime getEndOfWeek(DateTime date){
+    return getStartOfWeek(date).add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
+  }
+
+  static DateTime getStartOfMonth(DateTime date) {
+    return DateTime(date.year, date.month, 1);
+  }
+
+  static DateTime getEndOfMonth(DateTime date) {
+    return DateTime(date.year, date.month + 1, 0, 23, 59, 59);
+  }
+
+  static DateTime getStartOfYear(DateTime date) {
+    return DateTime(date.year, 1, 1);
+  }
+
+  static DateTime getEndOfYear(DateTime date) {
+    return DateTime(date.year, 12, 31, 23, 59, 59);
+  }
+
+  // tìm giao dịch sớm nhất
+  static DateTime _getFirstTransactionDate() {
+    if (_allTransactions.isEmpty) {
+      return DateTime.now().subtract(const Duration(days: 365));
+    }
+    return _allTransactions.fold(DateTime.parse(_allTransactions.first['date']), (minDate, tx) {
+      DateTime currentTxDate = DateTime.parse(tx['date']);
+      return currentTxDate.isBefore(minDate) ? currentTxDate : minDate;
+    });
   }
 
   // tổng chi tiêu
   static double getTotalExpense(DateTime date, int filterIndex) {
-    final aggregatedData = aggregateCategoryExpenses(date, filterIndex, mockBudgetCategories);
-    return aggregatedData.fold(0.0, (sum, item) => sum + item.totalAmount);
+    final data = aggregateCategoryExpenses(date, filterIndex);
+    return data.fold(0.0, (sum, item) => sum + item.totalAmount);
   }
 
   // lấy dl cho các chu kỳ trước
@@ -223,6 +223,5 @@ class DataAggregator {
     }
     return periods;
   }
-
 
 }

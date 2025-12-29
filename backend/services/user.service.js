@@ -1,41 +1,33 @@
-const { executeQuery, sql } = require('./db.service');
+const User = require('../models/User');
+const mongoose = require('mongoose');
 
+// 1. Tìm người dùng bằng Email (Dùng khi Đăng nhập)
 const findUserByEmail = async (email) => {
-    const query = `
-        SELECT user_id, password_hash, name
-        FROM Users
-        WHERE email = @email;
-    `;
-    const result = await executeQuery(query, [{ name: 'email', type: sql.NVarChar, value: email }]);
-    return result.recordset[0];
+    // MongoDB tìm kiếm rất nhanh bằng findOne
+    return await User.findOne({ email: email });
 };
 
+// 2. Tạo người dùng mới (Dùng khi Đăng ký)
 const createUser = async (email, passwordHash, name) => {
-    const query = `
-        INSERT INTO Users (email, password_hash, name, created_at)
-        VALUES (@email, @passwordHash, @name, GETDATE());
-        SELECT SCOPE_IDENTITY() AS user_id;
-    `;
+    const newUser = new User({
+        email: email,
+        password_hash: passwordHash,
+        name: name || null
+        // created_at đã có default là Date.now trong Model
+    });
 
-    const result = await executeQuery(query, [
-        { name: 'email', type: sql.NVarChar, value: email },
-        { name: 'passwordHash', type: sql.NVarChar, value: passwordHash },
-        { name: 'name', type: sql.NVarChar, value: name || null }
-    ]);
-
-    return result.recordset[0].user_id;
+    const result = await newUser.save();
+    return result._id; // Trả về ObjectId của user mới
 };
 
+// 3. Lấy thông tin user bằng ID
 const getUserById = async (user_id) => {
-    const query = `
-        SELECT user_id, email, name, created_at
-        FROM Users
-        WHERE user_id = @user_id;
-    `;
-    const result = await executeQuery(query, [
-        { name: 'user_id', type: sql.Int, value: user_id }
-    ]);
-    return result.recordset[0];
+    try {
+        return await User.findById(user_id).select('-password_hash');
+        // .select('-password_hash') để bảo mật, không trả về mật khẩu
+    } catch (err) {
+        return null;
+    }
 };
 
 module.exports = { findUserByEmail, createUser, getUserById };

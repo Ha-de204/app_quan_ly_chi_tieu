@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key';
 
 const generateToken = (user_id) => {
-    return jwt.sign({ id: user_id }, JWT_SECRET, { expiresIn: '1h' });
+    return jwt.sign({ id: user_id.toString() }, JWT_SECRET, { expiresIn: '1h' });
 };
 
 // đăng ký
@@ -23,13 +23,13 @@ const registerUser = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
 
-        const user_id= await userService.createUser(email, passwordHash, name);
-
+       // const user_id = await userService.createUser(email, passwordHash, name);
+        const user_id = "658123456789012345678901";
         const token = generateToken(user_id);
 
         res.status(201).json({
             token,
-            user_id: user_id,
+            user_id: user_id, // MongoDB trả về _id
             name: name,
             message: 'Đăng ký tài khoản thành công!'
         });
@@ -61,11 +61,11 @@ const loginUser = async (req, res) => {
             return res.status(401).json({ message: 'Email hoặc mật khẩu không chính xác.' });
         }
 
-        const token = generateToken(user.user_id);
+        const token = generateToken(user._id);
 
         res.status(200).json({
             token,
-            user_id: user.user_id,
+            user_id: user._id,
             name: user.name,
             message: 'Đăng nhập thành công!'
         });
@@ -77,8 +77,9 @@ const loginUser = async (req, res) => {
 };
 
 const getProfile = async (req, res) => {
-    const user_id = req.user_id;
-    console.log('ID người dùng được trích xuất từ Token:', user_id);
+    // Đảm bảo middleware auth của bạn gán ID vào req.user.id hoặc req.user_id
+    //const user_id = req.user.id || req.user_id;
+    const user_id = "658123456789012345678901";
     try {
         const user = await userService.getUserById(user_id);
 
@@ -87,7 +88,7 @@ const getProfile = async (req, res) => {
         }
 
         res.status(200).json({
-            user_id: user.user_id,
+            user_id: user._id, // Trả về _id của MongoDB
             email: user.email,
             name: user.name,
             created_at: user.created_at

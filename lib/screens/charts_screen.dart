@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../utils/data_aggregator.dart';
+import '../models/category_model.dart';
 import '../models/mock_budget_category.dart';
 import '../constants.dart';
 import 'dart:math';
@@ -20,10 +21,10 @@ class ChartsScreen extends StatefulWidget {
 class _ChartsScreenState extends State<ChartsScreen> {
   int _selectedFilterIndex = 1;
   DateTime _currentViewingDate = DateTime.now();
-  final List<MockBudgetCategory> _mockCategories = mockBudgetCategories;
   late List<DateTime> _pastPeriods;
   late ScrollController _scrollController;
   final GlobalKey _periodSelectorKey = GlobalKey();
+  bool _isLoading = true;
 
   final List<Color> _categoryColors = [
     _chartGreenPrimary,
@@ -40,9 +41,17 @@ class _ChartsScreenState extends State<ChartsScreen> {
   @override
   void initState() {
     super.initState();
-    _updatePeriods(initialScroll: true);
+    _initData();
     _scrollController = ScrollController();
   }
+
+  Future<void> _initData() async {
+    setState(() => _isLoading = true);
+    await DataAggregator.refreshData();
+    _updatePeriods(initialScroll: true);
+    setState(() => _isLoading = false);
+  }
+
   void _updatePeriods({bool initialScroll = false}) {
     final now = DateTime.now();
     _pastPeriods = DataAggregator.getPastPeriods(_selectedFilterIndex, now);
@@ -74,13 +83,10 @@ class _ChartsScreenState extends State<ChartsScreen> {
 
   // Lấy dữ liệu chi tiêu cho chu kỳ đang xem
   List<CategoryExpense> get _expenseDataForPeriod {
-    final data = DataAggregator.aggregateCategoryExpenses(
+    return DataAggregator.aggregateCategoryExpenses(
       _currentViewingDate,
       _selectedFilterIndex,
-      _mockCategories,
     );
-    data.sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
-    return data;
   }
 
   double get _totalExpenseForPeriod {
@@ -598,6 +604,12 @@ class _ChartsScreenState extends State<ChartsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: kPrimaryPink)),
+      );
+    }
+
     final expenseData = _expenseDataForPeriod;
     final totalExpense = _totalExpenseForPeriod;
 

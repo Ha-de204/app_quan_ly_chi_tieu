@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const reportController = require('./report.controller');
-const { protect } = require('../../middlewares/authMiddleware');
+//const { protect } = require('../../middlewares/authMiddleware');
 
 // Lấy tổng quan (Tổng Chi, Số dư) theo phạm vi thời gian
-router.get('/summary', protect, reportController.getSummary);
+router.get('/summary', reportController.getSummary);
 
 // Lấy phân tích Chi tiêu theo Danh mục (dùng cho Biểu đồ tròn/thanh)
-router.get('/category-breakdown', protect, reportController.getCategoryBreakdown);
+router.get('/category-breakdown', reportController.getCategoryBreakdown);
 
 // Lấy dữ liệu dòng tiền theo tháng (dùng cho Biểu đồ đường)
-router.get('/monthly-flow', protect, reportController.getMonthlyFlow);
+router.get('/monthly-flow', reportController.getMonthlyFlow);
 
 module.exports = router;

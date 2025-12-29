@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../models/mock_budget_category.dart';
+import '../services/apiBudget.dart';
+import '../services/apiCategory.dart';
+import '../models/category_model.dart';
+import '../constants.dart';
+import '../utils/data_aggregator.dart';
 
 class BudgetSettingScreen extends StatefulWidget {
-  final List<MockBudgetCategory> initialBudgets;
+  final DateTime selectedMonthYear;
   const BudgetSettingScreen({
     super.key,
-    required this.initialBudgets,
+    required this.selectedMonthYear,
   });
 
   @override
@@ -14,9 +18,14 @@ class BudgetSettingScreen extends StatefulWidget {
 }
 
 class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
-  // Dữ liệu tĩnh
-  late List<MockBudgetCategory> _budgetCategories;
+  final BudgetService _budgetService = BudgetService();
+  final CategoryService _categoryService = CategoryService();
 
+  List<CategoryModel> _categories = [];
+  Map<String, double> _budgetMap = {};
+  bool _isLoading = true;
+
+  String? _editingCategoryId;
   String? _editingCategoryName;
   double _currentBudgetInput = 0.0;
   String _inputString = '';
@@ -29,34 +38,83 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
   @override
   void initState(){
     super.initState();
-    _budgetCategories = List.from(widget.initialBudgets);
-
-    _editingCategoryName = null;
-    _inputString = '';
-    _currentBudgetInput = 0.0;
+    _loadData();
   }
+
+  String _cleanId(dynamic rawId) {
+    if (rawId == null) return "";
+    String idStr = rawId.toString();
+
+    // Trường hợp MongoDB trả về ObjectId("695158...")
+    if (idStr.contains("ObjectId(")) {
+      final match = RegExp(r"ObjectId\('([a-fA-F0-9]+)'\)").firstMatch(idStr);
+      return match?.group(1) ?? idStr;
+    }
+
+    // Trường hợp định dạng JSON {$oid: "..."}
+    if (rawId is Map && rawId.containsKey('\$oid')) {
+      return rawId['\$oid'].toString();
+    }
+
+    return idStr.replaceAll(RegExp(r"[^a-fA-F0-9]"), "").trim();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    String period = DateFormat('yyyy-MM').format(widget.selectedMonthYear);
+
+    try{
+      final results = await Future.wait([
+        _categoryService.getCategories(),
+        _budgetService.getBudgets(period),
+      ]);
+
+      setState(() {
+        _categories = results[0] as List<CategoryModel>;
+        final budgetList = results[1] as List<dynamic>;
+
+        // map data tu server
+        Map<String, double> tempMap = {};
+        for (var b in budgetList) {
+          String bId = _cleanId(b['category_id']);
+          double bAmount = (b['BudgetAmount'] as num? ?? 0.0).toDouble();
+
+          if (bId == '000000000000000000000000') {
+            tempMap['TOTAL'] = bAmount;
+          } else {
+            tempMap[bId] = bAmount;
+          }
+        }
+        _budgetMap = tempMap;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      debugPrint("Lỗi tải dữ liệu setting: $e");
+    }
+  }
+
   // -Logic Chỉnh sửa
-  void _startEditing(String categoryName, double initialBudget) {
+  void _startEditing(String id, String name, double initialBudget) {
     setState(() {
-      _editingCategoryName = categoryName;
+      _editingCategoryId = id;
+      _editingCategoryName = name;
       _inputString = initialBudget.toInt().toString();
       _currentBudgetInput = initialBudget;
     });
   }
 
   void _onKeyTap(String key) {
-    if(_editingCategoryName == null) return;
+    if(_editingCategoryId == null) return;
 
     setState(() {
       if(key == '✓'){
-        double newValue = double.tryParse(_inputString) ?? 0.0;
-        String categoryToSave = _editingCategoryName!;
-        _saveBudget(categoryToSave, newValue);
-
-        _editingCategoryName = null;
-        _inputString = '';
-        _currentBudgetInput = 0.0;
-        return;
+         _budgetMap[_editingCategoryId!] = double.tryParse(_inputString) ?? 0.0;
+         _editingCategoryId = null;
+         _editingCategoryName = null;
+         _inputString = '';
+         _currentBudgetInput = 0.0;
+         return;
       }
 
       if(key == 'x'){
@@ -87,14 +145,35 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
     });
   }
 
-  void _saveBudget(String categoryName, double newBudget) {
-      int index = _budgetCategories.indexWhere((e) => e.name == categoryName);
-      if (index != -1) {
-          _budgetCategories[index] = MockBudgetCategory(
-            name: categoryName,
-            budget: newBudget,
-            icon: _budgetCategories[index].icon,
+  Future<void> _saveAllAndClose() async {
+      setState(() => _isLoading = true);
+      String period = DateFormat('yyyy-MM').format(widget.selectedMonthYear);
+
+      try{
+        List<Future> saveTasks = [];
+        for(var entry in _budgetMap.entries) {
+          String finalId = entry.key == 'TOTAL'
+              ? '000000000000000000000000'
+              : entry.key;
+
+          saveTasks.add(_budgetService.upsertBudget(
+            categoryId: finalId,
+            amount: entry.value,
+            period: period,
+          ));
+        }
+        await Future.wait(saveTasks);
+        await DataAggregator.refreshData();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Đã lưu cài đặt ngân sách thành công!')),
           );
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lỗi khi lưu ngân sách")));
       }
   }
 
@@ -177,15 +256,16 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
     );
   }
 
-  Widget _buildBudgetSettingRow(MockBudgetCategory item) {
-    bool isEditing = _editingCategoryName == item.name;
-    double displayAmount = isEditing ? _currentBudgetInput : item.budget;
+  Widget _buildBudgetSettingRow(CategoryModel item) {
+    bool isEditing = _editingCategoryId == item.id;
+    double budgetValue = _budgetMap[item.id] ?? 0.0;
+    double displayAmount = isEditing ? _currentBudgetInput : budgetValue;
     Widget editWidget = InkWell(
-      onTap: () => _startEditing(item.name, item.budget),
+      onTap: () => _startEditing(item.id, item.name, budgetValue),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
         child: Text(
-          item.budget == 0.0 ? 'Sửa' : _formatAmount(displayAmount),
+          budgetValue == 0.0 ? 'Sửa' : _formatAmount(displayAmount),
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -201,7 +281,11 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Row(
             children: [
-              Icon(item.icon, color: Colors.red, size: 24),
+              Icon(
+                  IconData(item.iconCodePoint, fontFamily: 'MaterialIcons'),
+                  color: kPrimaryPink,
+                  size: 24
+              ),
               const SizedBox(width: 15),
               Text(item.name, style: const TextStyle(fontSize: 16)),
               const Spacer(),
@@ -217,7 +301,9 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
   }
 
   Widget _buildInputDisplay() {
-    String title = _editingCategoryName ?? '';
+    String title = _editingCategoryId == 'TOTAL'
+      ? 'Ngân sách hàng tháng'
+      : (_editingCategoryName ?? '');
 
     return Padding(
       padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 10.0),
@@ -248,12 +334,14 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
   //  BUILD chính
   @override
   Widget build(BuildContext context) {
-    bool isEditing = _editingCategoryName != null;
+    bool isEditing = _editingCategoryId != null;
 
     return Container(
       height: MediaQuery.of(context).size.height * (isEditing ? 0.9 : 0.7),
       padding: const EdgeInsets.only(top: 10),
-      child: Column(
+      child: _isLoading
+        ? const Center(child: CircularProgressIndicator(color: Colors.pink))
+        : Column(
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -266,7 +354,7 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
                 ),
                 const Text('Cài đặt ngân sách', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                 TextButton(
-                  onPressed: () => Navigator.pop(context, _budgetCategories),
+                  onPressed: _saveAllAndClose,
                   child: const Text('Xong', style: TextStyle(color: Colors.pink)),
                 ),
               ],
@@ -280,7 +368,11 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Column(
                 children: [
-                  ..._budgetCategories.map((item) => _buildBudgetSettingRow(item)).toList(),
+                  _buildBudgetSettingRow(CategoryModel(id: 'TOTAL', name: 'Ngân sách hàng tháng', iconCodePoint: 58164)),
+                  ..._categories
+                      .where((cat) => _cleanId(cat.id) != '000000000000000000000000')
+                      .map((item) => _buildBudgetSettingRow(item))
+                      .toList(),
                 ],
               ),
             ),
