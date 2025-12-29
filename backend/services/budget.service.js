@@ -1,5 +1,5 @@
 const Budget = require('../models/Budget');
-const Transaction = require('../models/Transaction'); // Giả định bạn có model này
+const Transaction = require('../models/Transaction');
 const mongoose = require('mongoose');
 
 // 1. Logic Upsert (Cập nhật nếu có, chưa có thì thêm mới)
@@ -16,13 +16,19 @@ const upsertBudget = async (user_id, category_id, amount, period) => {
     return result._id;
 };
 
-// 2. Lấy ngân sách và số tiền đã chi tiêu
+// 2. Lấy ngân sách và số tiền đã chi tiêu theo tháng (Đã sửa lỗi chọn tháng khác)
 const getBudgetsAmountPeriod = async (user_id, period) => {
+    const [year, month] = period.split('-').map(Number);
+    const startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
     const budgets = await Budget.aggregate([
-        { $match: {
-            user_id: new mongoose.Types.ObjectId(user_id),
-            period: period
-        }},
+        {
+            $match: {
+                user_id: new mongoose.Types.ObjectId(user_id),
+                period: period
+            }
+        },
         {
             $lookup: {
                 from: 'Category',
@@ -37,15 +43,24 @@ const getBudgetsAmountPeriod = async (user_id, period) => {
                 from: 'Transaction',
                 let: { catId: '$category_id', uId: '$user_id' },
                 pipeline: [
-                    { $match: {
-                        $expr: {
-                            $and: [
-                                { $eq: ['$category_id', '$$catId'] },
-                                { $eq: ['$user_id', '$$uId'] },
-                                { $eq: ['$type', 'expense'] },
-                            ]
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ['$user_id', '$$uId'] },
+                                    { $eq: ['$type', 'expense'] },
+                                    { $gte: ['$date', startDate] },
+                                    { $lte: ['$date', endDate] },
+                                    {
+                                        $or: [
+                                           { $eq: ['$$catId', new mongoose.Types.ObjectId("000000000000000000000000")] },
+                                           { $eq: ['$category_id', '$$catId'] }
+                                        ]
+                                    }
+                                ]
+                            }
                         }
-                    }}
+                    }
                 ],
                 as: 'spent_transactions'
             }

@@ -64,34 +64,37 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
 
   String _cleanId(dynamic rawId) {
     if (rawId == null) return "";
-    String idStr = rawId.toString();
+    if (rawId is Map && rawId.containsKey('\$oid')) {
+      return rawId['\$oid'].toString();
+    }
+    String idStr = rawId.toString().trim();
 
     if (idStr.contains("ObjectId(")) {
       final match = RegExp(r"ObjectId\('([a-fA-F0-9]+)'\)").firstMatch(idStr);
       return match?.group(1) ?? idStr;
     }
 
-    if (rawId is Map && rawId.containsKey('\$oid')) {
-      return rawId['\$oid'].toString();
+    if (RegExp(r"^[a-fA-F0-9]{24}$").hasMatch(idStr)) {
+      return idStr;
     }
-
-    return idStr.replaceAll(RegExp(r"[^a-fA-F0-9]"), "").trim();
+    return idStr;
   }
 
   // tai data tu backend
   Future<void> _loadAllData() async {
     setState(() => _isLoading = true);
     String period = DateFormat('yyyy-MM').format(_selectedMonthYear);
-    String startDate = DateFormat('yyyy-MM-01').format(_selectedMonthYear);
     var nextMonth = DateTime(_selectedMonthYear.year, _selectedMonthYear.month+1, 1);
-    String endDate = DateFormat('yyyy-MM-dd').format(nextMonth.subtract(const Duration(days: 1)));
+    DateTime startDateTime = DateTime(_selectedMonthYear.year, _selectedMonthYear.month, 1);
+    String startDate = DateFormat('yyyy-MM-dd').format(startDateTime);
+    DateTime endDateTime = DateTime(_selectedMonthYear.year, _selectedMonthYear.month + 1, 0);
+    String endDate = DateFormat('yyyy-MM-dd').format(endDateTime);
 
     try {
       final results = await Future.wait([
         _categoryService.getCategories(),
         _budgetService.getBudgets(period),
-        _reportService.getCategoryBreakdown(startDate, endDate),
-        _reportService.getSummary(startDate, endDate),
+
       ]);
       setState(() {
         _allCategories = results[0] as List<CategoryModel>;
@@ -99,50 +102,35 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
         // map data ngan sach
         final budgetList = results[1] as List<dynamic>;
         Map<String, double> tempBudgets = {};
+        Map<String, double> tempExpenses = {};
+        double calculatedTotalExpense = 0.0;
+
         for (var b in budgetList) {
           if (b == null) continue;
 
           String bId = _cleanId(b['category_id']);
           double bAmount = (b['BudgetAmount'] as num? ?? 0.0).toDouble();
+          double sAmount = (b['TotalSpent'] as num? ?? 0.0).toDouble();
 
-          if (bAmount > 0) {
+          if (bId != "000000000000000000000000" && bId.isNotEmpty) {
+            calculatedTotalExpense += sAmount;
+
             tempBudgets[bId] = bAmount;
+            tempExpenses[bId] = sAmount;
+
             try {
-              final catName = _allCategories.firstWhere((c) => _cleanId(c.id) == bId).name.toLowerCase().trim();
-              tempBudgets[catName] = bAmount;
+              final cat = _allCategories.firstWhere((c) => _cleanId(c.id) == bId);
+              tempBudgets[cat.name.toLowerCase().trim()] = bAmount;
+              tempExpenses[cat.name.toLowerCase().trim()] = sAmount;
             } catch (_) {}
+          } else {
+            _totalBudgetSetting = bAmount;
           }
         }
+
         _budgetsMap = tempBudgets;
-        print("DEBUG: Budgets Map hiện tại: $_budgetsMap");
-
-        // map data chi tieu tu Transaction DB
-        final breakdown = results[2] as List<dynamic>;
-        Map<String, double> tempExpenses = {};
-        for (var e in breakdown) {
-          if (e == null || e['_id'] == null) continue;
-
-          String rawExpenseId = e['_id'].toString();
-          String cleanExpenseId = _cleanId(rawExpenseId);
-          double eAmount = (e['totalAmount'] as num? ?? 0.0).toDouble();
-
-          tempExpenses[cleanExpenseId] = eAmount;
-
-          try {
-            final matchedCat = _allCategories.firstWhere((c) => c.id == cleanExpenseId);
-            tempExpenses[matchedCat.name.toLowerCase().trim()] = eAmount;
-          } catch (_) {
-            debugPrint("Không tìm thấy category ID khớp với chi tiêu: $cleanExpenseId");
-          }
-        }
         _expensesMap = tempExpenses;
-        print("DEBUG: Expenses Map sau khi chuẩn hóa: $_expensesMap");
-
-        // summary
-        final summary = results[3] as Map<String, dynamic>;
-        _totalBudgetSetting = _budgetsMap['000000000000000000000000'] ??
-            (summary['BudgetAmount'] is num ? (summary['BudgetAmount'] as num).toDouble() : 0.0);
-        _totalExpense = (summary['TotalExpense'] as num? ?? 0.0).toDouble();
+        _totalExpense = calculatedTotalExpense;
         _isLoading = false;
       });
     } catch (e) {
