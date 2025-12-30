@@ -2,14 +2,13 @@ import 'package:dio/dio.dart';
 import 'apiClient.dart';
 
 class BudgetService {
-  // Sử dụng instance của ApiClient đã có Interceptor tự động đính kèm Token
   final Dio _dio = ApiClient.instance;
 
   // 1. Thiết lập hoặc Cập nhật ngân sách (upsertBudget)
   Future<Map<String, dynamic>> upsertBudget({
     required String categoryId,
     required double amount,
-    required String period, // Phải là định dạng "YYYY-MM"
+    required String period,
   }) async {
     try {
       final response = await _dio.post("budgets/upsert", data: {

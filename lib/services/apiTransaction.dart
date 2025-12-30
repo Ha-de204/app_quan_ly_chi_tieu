@@ -4,7 +4,7 @@ import 'apiClient.dart';
 class TransactionService {
   final Dio _dio = ApiClient.instance;
 
-  // 1. Tạo giao dịch mới (createTransaction)
+  // 1. Tạo giao dịch mới
   Future<Map<String, dynamic>> createTransaction({
     required String categoryId,
     required double amount,
@@ -31,7 +31,7 @@ class TransactionService {
     }
   }
 
-  // 2. Lấy toàn bộ danh sách giao dịch (getTransactions)
+  // 2. Lấy toàn bộ danh sách giao dịch
   Future<List<dynamic>> getTransactions() async {
     try {
       final response = await _dio.get("transactions/list");
@@ -42,7 +42,7 @@ class TransactionService {
     }
   }
 
-  // 3. Lấy chi tiết 1 giao dịch (getTransactionById)
+  // 3. Lấy chi tiết 1 giao dịch
   Future<Map<String, dynamic>?> getTransactionById(String id) async {
     try {
       final response = await _dio.get("transactions/$id");
@@ -53,7 +53,7 @@ class TransactionService {
     }
   }
 
-  // 4. Cập nhật giao dịch (updateTransaction)
+  // 4. Cập nhật giao dịch
   Future<Map<String, dynamic>> updateTransaction(
       String id, {
         required String categoryId,
@@ -81,7 +81,7 @@ class TransactionService {
     }
   }
 
-  // 5. Xóa giao dịch (deleteTransaction)
+  // 5. Xóa giao dịch
   Future<Map<String, dynamic>> deleteTransaction(String id) async {
     try {
       final response = await _dio.delete("transactions/$id");

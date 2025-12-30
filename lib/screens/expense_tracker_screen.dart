@@ -7,14 +7,12 @@ import '../services/apiBudget.dart';
 import '../services/apiCategory.dart';
 import '../services/apiTransaction.dart';
 import '../models/category_model.dart';
-import '../models/TransactionData.dart';
 import '../utils/data_aggregator.dart';
 import '../models/monthly_expense_data.dart';
 
 // Màn hình chi tiết
 import 'expense_detail_screen.dart';
 import 'budget_detail_screen.dart';
-import 'balance_detail_screen.dart';
 import 'charts_screen.dart';
 import 'reports_screen.dart';
 import 'profile_screen.dart';
@@ -35,9 +33,10 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
 
   // State Variables
   DateTime _selectedMonthYear = DateTime.now();
-  DateTime _selectedSpecificDate = DateTime.now();
   int _selectedIndex = 0;
   bool _isLoading = true;
+  String? _filterCategoryId;
+  DateTime? _filterDate;
 
   List<CategoryModel> _apiCategories = [];
   List<dynamic> _apiTransactions = [];
@@ -62,6 +61,17 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
   void initState() {
     super.initState();
     _fetchData();
+  }
+
+  String _cleanId(dynamic rawId) {
+    if (rawId == null) return "";
+    if (rawId is Map && rawId.containsKey('\$oid')) return rawId['\$oid'].toString();
+    String idStr = rawId.toString().trim();
+    if (idStr.contains("ObjectId(")) {
+      final match = RegExp(r"ObjectId\('([a-fA-F0-9]+)'\)").firstMatch(idStr);
+      return match?.group(1) ?? idStr;
+    }
+    return idStr;
   }
 
   Future<void> _fetchData() async {
@@ -97,11 +107,11 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
 
       if (mounted) {
         setState(() {
-          // 1. Xử lý Giao dịch (Transactions)
+          // 1. Xử lý Giao dịch
           _apiTransactions = results[1] as List<dynamic>;
           debugPrint("Đã tải được ${_apiTransactions.length} giao dịch từ Server");
 
-          // 2. Xử lý Ngân sách (Budgets)
+          // 2. Xử lý Ngân sách
           final budgetList = results[0] as List<dynamic>;
           double tempTotal = 0;
           Map<String, double> tempMap = {};
@@ -173,9 +183,38 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
 
   List<dynamic> get _filteredTransactions {
     return _apiTransactions.where((tx) {
-      DateTime date = DateTime.parse(tx['date']);
-      return date.year == _selectedMonthYear.year &&
-          date.month == _selectedMonthYear.month;
+      DateTime txDate = DateTime.parse(tx['date']);
+      //  Luôn luôn lọc theo Tháng/Năm đã chọn ở Sổ cái
+      bool matchesMonth = txDate.year == _selectedMonthYear.year &&
+                          txDate.month == _selectedMonthYear.month;
+      if (!matchesMonth) return false;
+      //  Lọc theo ngày cụ thể (nếu có chọn ở icon Calendar)
+      if (_filterDate != null) {
+        if (txDate.day != _filterDate!.day ||
+            txDate.month != _filterDate!.month ||
+            txDate.year != _filterDate!.year) {
+          return false;
+        }
+      }
+      //  Lọc theo danh mục (nếu có chọn ở icon Search)
+      if (_filterCategoryId != null) {
+        final selectedCat = _apiCategories.firstWhere(
+              (c) => c.id == _filterCategoryId,
+          orElse: () => CategoryModel(id: '', name: '', iconCodePoint: 0),
+        );
+
+        String txCatId = _cleanId(tx['category_id']);
+        String txTitle = (tx['title'] ?? "").toString().toLowerCase().trim();
+        String selectedCatName = selectedCat.name.toLowerCase().trim();
+
+        bool isMatchId = txCatId == _filterCategoryId;
+        bool isMatchName = selectedCatName.isNotEmpty && txTitle == selectedCatName;
+
+        if (!isMatchId && !isMatchName) {
+        return false;
+        }
+      }
+      return true;
     }).toList()..sort((a, b) => b['date'].compareTo(a['date']));
   }
 
@@ -219,6 +258,68 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
     });
   }
 
+  // hien menu chon danh muc
+  void _showCategoryFilter() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25.0)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Lọc theo danh mục', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              const SizedBox(height: 10),
+              const Divider(),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Colors.grey,
+                  child: Icon(Icons.all_inclusive, color: Colors.white, size: 20),
+                ),
+                title: const Text('Tất cả danh mục'),
+                trailing: _filterCategoryId == null ? const Icon(Icons.check_circle, color: Colors.green) : null,
+                onTap: () {
+                  setState(() => _filterCategoryId = null);
+                  Navigator.pop(context);
+                },
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _apiCategories.length,
+                  itemBuilder: (context, index) {
+                    final cat = _apiCategories[index];
+                    bool isSelected = _filterCategoryId == cat.id;
+                    return ListTile(
+                      leading: Icon(IconData(cat.iconCodePoint, fontFamily: 'MaterialIcons'), color: isSelected ? kPrimaryPink : Colors.grey),
+                      title: Text(
+                        cat.name,
+                        style: TextStyle(
+                            color: isSelected ? kPrimaryPink : Colors.black,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+                        ),
+                      ),
+                      trailing: isSelected ? const Icon(Icons.check_circle, color: Colors.green) : null,
+                      onTap: () {
+                        setState(() => _filterCategoryId = cat.id);
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // Hàm hiển thị lịch chọn tháng/năm
   Future<void> _selectMonthYear(BuildContext context) async {
     final DateTime? picked = await showMonthYearPicker(
@@ -237,7 +338,7 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
           ),
           child: MediaQuery(
             data: MediaQuery.of(context).copyWith(
-              textScaleFactor: 0.95, // Giảm kích thước văn bản xuống 85%
+              textScaleFactor: 0.95,
             ),
             child: child!,
           ),
@@ -248,17 +349,21 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
     if (picked != null && picked != _selectedMonthYear) {
       setState(() {
         _selectedMonthYear = picked;
+        _filterDate = null;
+        _filterCategoryId = null;
       });
     }
   }
 
   // Hàm hiển thị lịch chọn ngày cụ thể (cho AppBar)
   Future<void> _selectSpecificDate(BuildContext context) async {
+    final firstDayOfMonth = DateTime(_selectedMonthYear.year, _selectedMonthYear.month, 1);
+    final lastDayOfMonth = DateTime(_selectedMonthYear.year, _selectedMonthYear.month + 1, 0);
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedSpecificDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2030),
+      initialDate: _filterDate ?? firstDayOfMonth,
+      firstDate: firstDayOfMonth,
+      lastDate: lastDayOfMonth,
       locale: const Locale('vi', 'VN'),
       builder: (context, child) {
         return Theme(
@@ -273,10 +378,10 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
       },
     );
 
-    if (picked != null && picked != _selectedSpecificDate) {
+    if (picked != null) {
       setState(() {
-        _selectedSpecificDate = picked;
-        print('Ngày cụ thể đã chọn để lọc: $_selectedSpecificDate');
+        _filterDate = picked;
+        print('Ngày cụ thể đã chọn để lọc: $_filterDate');
       });
     }
   }
@@ -458,9 +563,9 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
     print("TX ID: $txCategoryId --- CAT IDs: ${_apiCategories.map((e) => e.id).toList()}");
 
     final category = _apiCategories.firstWhere(
-          (c) => c.id == txCategoryId, // Ưu tiên khớp ID thật từ Server
+          (c) => c.id == txCategoryId,
       orElse: () => _apiCategories.firstWhere(
-            (c) => c.name == txTitle, // Nếu ID không khớp (do ID cũ/giả), khớp theo Tên
+            (c) => c.name == txTitle,
         orElse: () => CategoryModel(
             id: '',
             name: txTitle.isNotEmpty ? txTitle : 'Khác',
@@ -531,53 +636,48 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
   }
 
   Widget _buildStatColumn(String label, String value, BuildContext context) {
-    Widget destinationScreen;
+    Widget? destinationScreen;
+
     if (label == 'Chi tiêu') {
-      destinationScreen = ExpenseDetailScreen(
-        monthlyData: _aggregateMonthlyData(),
-      );
+      destinationScreen = ExpenseDetailScreen(monthlyData: _aggregateMonthlyData());
     } else if (label == 'Ngân sách') {
       String period = DateFormat('yyyy-MM').format(_selectedMonthYear);
-      destinationScreen = BudgetDetailScreen(
-          period: period
-      );
-    } else if (label == 'Số dư') {
-      destinationScreen = const BalanceDetailScreen();
-    } else {
-      destinationScreen = const Scaffold(body: Center(child: Text('Lỗi màn hình')));
+      destinationScreen = BudgetDetailScreen(period: period);
+    }
+
+    Widget content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black),
+          ),
+        ],
+      ),
+    );
+
+    if (destinationScreen == null) {
+      return content;
     }
 
     return InkWell(
       onTap: () async {
-        // Chuyển sang màn hình tương ứng đã chọn
         await Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => destinationScreen,
-          ),
+          MaterialPageRoute(builder: (context) => destinationScreen!),
         );
         _fetchData();
       },
       customBorder: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(4),
       ),
-
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              label,
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black),
-            ),
-          ],
-        ),
-      ),
+      child: content,
     );
   }
 
@@ -624,8 +724,6 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: <Widget>[
-
-                  //chon thang-nam
                   InkWell(
                     onTap: () => _selectMonthYear(context),
                     child: Padding(
@@ -666,15 +764,18 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
             ],
           ),
         ),
-
-        // Phần danh sách giao dịch
         Expanded(
           child: Container(
             color: kLightPinkBackground,
             child: transactionsToDisplay.isEmpty
                 ? Center(
-              child: Text('Chưa có giao dịch trong ${DateUtils.dateOnly(_selectedMonthYear).month}!', style: TextStyle(color: Colors.grey)),
-            )
+                  child: Text(
+                    _filterCategoryId != null || _filterDate != null
+                        ? 'Không tìm thấy giao dịch phù hợp với bộ lọc'
+                        : 'Chưa có giao dịch trong tháng ${_selectedMonthYear.month}!',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                )
                 : ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               itemCount: transactionsToDisplay.length,
@@ -713,12 +814,22 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
           onPressed: () {},
         ),
         actions: <Widget>[
+          if (_filterDate != null || _filterCategoryId != null)
+            IconButton(
+              icon: const Icon(Icons.filter_alt_off, color: Colors.red),
+              onPressed: () {
+                setState(() {
+                  _filterDate = null;
+                  _filterCategoryId = null;
+                });
+              },
+            ),
           IconButton(
-            icon: const Icon(Icons.search, color: Colors.black),
-            onPressed: () {},
+            icon:  Icon(Icons.search, color: _filterCategoryId != null ? kPrimaryPink : Colors.black),
+            onPressed: _showCategoryFilter,
           ),
           IconButton(
-            icon: const Icon(Icons.calendar_month, color: Colors.black),
+            icon:  Icon(Icons.calendar_month, color: _filterDate != null ? kPrimaryPink : Colors.black),
             onPressed: () => _selectSpecificDate(context),
           ),
         ],
@@ -764,15 +875,10 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
     }
 
     return Scaffold(
-      // 1. App Bar
       appBar: currentAppBar,
-
-      // 5. Body - Hiển thị màn hình tương ứng với tab được chọn
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: kPrimaryPink))
           : currentBody,
-
-      // 6. Floating Action Button (Nút + tròn)
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddTransactionSheet,
@@ -782,7 +888,6 @@ class _ExpenseTrackerScreenState extends State<ExpenseTrackerScreen> {
         child: const Icon(Icons.add, size: 30, color: Colors.white),
       ),
 
-      // 7. Bottom Navigation Bar
       bottomNavigationBar: BottomAppBar(
         color: Colors.white,
         elevation: 0,

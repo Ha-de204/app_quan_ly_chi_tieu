@@ -30,7 +30,7 @@ class BudgetCategory {
 
 class BudgetDetailScreen extends StatefulWidget {
   final String period;
-  const BudgetDetailScreen({super.key, required this.period /*required this.initialCategoryBudgets */});
+  const BudgetDetailScreen({super.key, required this.period });
 
   @override
   State<BudgetDetailScreen> createState() => _BudgetDetailScreenState();
@@ -172,12 +172,12 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
       _currentInput = double.tryParse(_inputString) ?? 0.0;
     });
   }
-  
+
   Future<void> _saveBudget() async {
     if(_editingCategoryId == null) return;
     double newValue = double.tryParse(_inputString) ?? 0.0;
     String period = DateFormat('yyyy-MM').format(_selectedMonthYear);
-    
+
     setState(() => _isLoading = true);
     String rawId = _editingCategoryId == 'Monthly' ? '000000000000000000000000' : _editingCategoryId!;
     String finalId = _cleanId(rawId);
@@ -218,7 +218,7 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
         debugPrint("Lỗi khi lưu ngân sách: $e");
       }
     }
-  } 
+  }
 
   void _onKeyTap(String key) {
     if(_editingCategoryId == null) return;
@@ -280,7 +280,7 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
           ),
           child: MediaQuery(
             data: MediaQuery.of(context).copyWith(
-            textScaleFactor: 0.95,
+              textScaleFactor: 0.95,
             ),
             child: child!,
           ),
@@ -333,41 +333,41 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
     else if (isDownArrow) icon = Icons.keyboard_arrow_down;
 
     return Padding(
-        padding: const EdgeInsets.all(4.0),
-        child: InkWell(
-          onTap: () => _onKeyTap(label),
-          child: Container(
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: isAction ? Colors.pink.shade400 : Colors.grey[100],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-              boxShadow: isAction || isCheck ? null : [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.5),
-                  spreadRadius: 1,
-                  blurRadius: 2,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: icon != null
-              ? Icon(
-                  icon,
-                  color: isCheck ? Colors.white : Colors.black,
-                  size: 24,
-                )
-              : Text(
-                label,
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: isAction ? Colors.white : color,
-                ),
+      padding: const EdgeInsets.all(4.0),
+      child: InkWell(
+        onTap: () => _onKeyTap(label),
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isAction ? Colors.pink.shade400 : Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+            boxShadow: isAction || isCheck ? null : [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.5),
+                spreadRadius: 1,
+                blurRadius: 2,
+                offset: const Offset(0, 2),
               ),
+            ],
+          ),
+          child: icon != null
+              ? Icon(
+            icon,
+            color: isCheck ? Colors.white : Colors.black,
+            size: 24,
+          )
+              : Text(
+            label,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: isAction ? Colors.white : color,
+            ),
           ),
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildStatDetail(String title, String value, {Color color = Colors.black}) {
@@ -499,7 +499,6 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
     if (_editingCategoryId == 'Monthly') {
       title = 'Ngân sách hàng tháng';
     } else {
-      // Tìm tên danh mục từ danh sách dựa trên ID đang sửa
       final category = _allCategories.firstWhere(
             (cat) => cat.id == _editingCategoryId,
         orElse: () => CategoryModel(id: '', name: 'Danh mục', iconCodePoint: 0),
@@ -588,8 +587,8 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
         ],
       ),
       body: _isLoading
-        ? const Center(child: CircularProgressIndicator(color: Colors.pink))
-        : Stack(
+          ? const Center(child: CircularProgressIndicator(color: Colors.pink))
+          : Stack(
         children: [
           SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
@@ -631,17 +630,17 @@ class _BudgetDetailScreenState extends State<BudgetDetailScreen> {
                 children: [
                   if (isEditing)
                     Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildInputDisplay(),
-                        Padding(
-                            padding: const EdgeInsets.only(bottom: 5.0),
-                            child: SizedBox(
-                              height: 220,
-                              child: _buildCalculatorKeypad(),
-                            )
-                        )
-                      ]
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildInputDisplay(),
+                          Padding(
+                              padding: const EdgeInsets.only(bottom: 5.0),
+                              child: SizedBox(
+                                height: 220,
+                                child: _buildCalculatorKeypad(),
+                              )
+                          )
+                        ]
                     )
                   else
                     Padding(

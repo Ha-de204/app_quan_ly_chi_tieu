@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../utils/data_aggregator.dart';
-import '../models/category_model.dart';
-import '../models/mock_budget_category.dart';
 import '../constants.dart';
 import 'dart:math';
 
@@ -163,7 +160,7 @@ class _ChartsScreenState extends State<ChartsScreen> {
     String startMonthYear;
     if (start.year != end.year) {
       startMonthYear = 'thg ${start.month} ${start.year}';
-      endMonthYear = 'thg ${end.month} ${end.year}'; // Cập nhật format cho ngày kết thúc
+      endMonthYear = 'thg ${end.month} ${end.year}';
     } else {
       startMonthYear = 'thg ${start.month}';
     }
@@ -397,8 +394,8 @@ class _ChartsScreenState extends State<ChartsScreen> {
           height: 150,
           child: CustomPaint(
             painter: _CircularSegmentPainter(
-              startAngle: startValue * 2 * pi, // Bắt đầu từ vị trí tích lũy
-              sweepAngle: sweepAngle * 2 * pi, // Độ dài cung
+              startAngle: startValue * 2 * pi,
+              sweepAngle: sweepAngle * 2 * pi,
               color: color,
               strokeWidth: 15.0,
             ),
@@ -456,7 +453,7 @@ class _ChartsScreenState extends State<ChartsScreen> {
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0), // CĂN CHỈNH: Thêm padding
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -586,14 +583,14 @@ class _ChartsScreenState extends State<ChartsScreen> {
                       child: LinearProgressIndicator(
                         value: item.percentage.clamp(0.0, 1.0),
                         backgroundColor: Colors.grey.shade200,
-                        valueColor: AlwaysStoppedAnimation<Color>(color), // Thanh tiến trình theo màu danh mục
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
                         minHeight: 5,
                       ),
                     ),
                   ),
                 ],
               ),
-              const Divider(height: 25, thickness: 1, color: Color(0xFFEFEFEF)), // Đường kẻ mỏng
+              const Divider(height: 25, thickness: 1, color: Color(0xFFEFEFEF)),
             ],
           ),
         );

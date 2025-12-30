@@ -45,13 +45,11 @@ class _BudgetSettingScreenState extends State<BudgetSettingScreen> {
     if (rawId == null) return "";
     String idStr = rawId.toString();
 
-    // Trường hợp MongoDB trả về ObjectId("695158...")
     if (idStr.contains("ObjectId(")) {
       final match = RegExp(r"ObjectId\('([a-fA-F0-9]+)'\)").firstMatch(idStr);
       return match?.group(1) ?? idStr;
     }
 
-    // Trường hợp định dạng JSON {$oid: "..."}
     if (rawId is Map && rawId.containsKey('\$oid')) {
       return rawId['\$oid'].toString();
     }

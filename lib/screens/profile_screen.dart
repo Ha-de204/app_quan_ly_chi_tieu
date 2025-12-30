@@ -52,16 +52,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   const Expanded(
                     child: SelectableText(
-                      _APP_LINK, // Đường dẫn giả định
+                      _APP_LINK,
                       style: TextStyle(color: kPrimaryPink, fontWeight: FontWeight.w500),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Nút Sao chép
                   InkWell(
                     onTap: () async {
                       await Clipboard.setData(const ClipboardData(text: _APP_LINK));
-                      // Hiển thị thông báo đã sao chép
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(

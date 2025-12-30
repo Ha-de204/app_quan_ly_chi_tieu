@@ -17,7 +17,6 @@ class CategoryModel {
     );
   }
 
-  // Chuyển ngược lại thành Map để gửi lên API
   Map<String, dynamic> toJson() {
     return {
       'name': name,

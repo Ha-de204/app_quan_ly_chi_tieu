@@ -1,10 +1,8 @@
 const reportService = require('../../services/report.service');
 const budgetService = require('../../services/budget.service');
 
-// Hàm chuẩn hóa ngày tháng giữ nguyên vì JS Date tương thích tốt với MongoDB
 const normalizeDateParams = (req) => {
     const { startDate, endDate } = req.query;
-
     const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1);
     const end = endDate ? new Date(endDate) : new Date(new Date().getFullYear(), 11, 31);
 
@@ -22,15 +20,9 @@ const getSummary = async (req, res) => {
     const period = getPeriodString(startDate);
 
     try {
-        // Lấy ngân sách: Đảm bảo service trả về con số (ví dụ: 5000000)
         const budgetAmount = await budgetService.getBudgetsAmountPeriod(user_id, period);
-
-        // Lấy tổng chi tiêu từ Transactions
         const transactionSummary = await reportService.getSummaryByDateRange(user_id, startDate, endDate);
-
         const totalExpense = transactionSummary.TotalExpense || 0;
-
-        // Tính toán số dư
         const netBalance = (budgetAmount || 0) - totalExpense;
 
         res.status(200).json({

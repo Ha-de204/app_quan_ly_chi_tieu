@@ -34,7 +34,6 @@ const createDefaultCategories = async (user_id) => {
         isDefault: true
     }));
 
-    // Sử dụng insertMany của Mongoose để chèn nhanh
     return await CategoryModel.insertMany(categoriesWithUser);
 };
 

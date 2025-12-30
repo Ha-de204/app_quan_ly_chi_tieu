@@ -40,8 +40,8 @@ const getCategoryBreakdown = async (user_id, startDate, endDate) => {
             }
         },
         {
-            $lookup: { // Tương tự INNER JOIN Category
-                from: 'Category', // Tên collection trong MongoDB (thường là số nhiều)
+            $lookup: {
+                from: 'Category',
                 localField: 'category_id',
                 foreignField: '_id',
                 as: 'category_info'
@@ -67,7 +67,6 @@ const getMonthlyFlow = async (user_id, year) => {
     const startOfYear = new Date(`${year}-01-01`);
     const endOfYear = new Date(`${year}-12-31T23:59:59`);
 
-    // Bước 1: Lấy tổng chi tiêu từng tháng (Transactions)
     const monthlyExpenses = await Transaction.aggregate([
         {
             $match: {
@@ -84,14 +83,12 @@ const getMonthlyFlow = async (user_id, year) => {
         }
     ]);
 
-    // Bước 2: Lấy ngân sách tổng (Budgets không có category_id)
     const budgets = await Budget.find({
         user_id: new mongoose.Types.ObjectId(user_id),
         period: { $regex: `^${year}-` },
         $or: [{ category_id: null }, { category_id: { $exists: false } }]
     });
 
-    // Bước 3: Hợp nhất dữ liệu bằng Javascript (Dễ kiểm soát hơn JOIN phức tạp)
     const finalFlow = [];
     for (let month = 1; month <= 12; month++) {
         const periodStr = `${year}-${month.toString().padStart(2, '0')}`;

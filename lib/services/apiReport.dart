@@ -4,8 +4,7 @@ import 'apiClient.dart';
 class ReportService {
   final Dio _dio = ApiClient.instance;
 
-  // 1. Lấy tổng quan: Tổng chi, Ngân sách, Số dư (getSummary)
-  // Gửi startDate và endDate dạng YYYY-MM-DD
+  // 1. Lấy tổng quan
   Future<Map<String, dynamic>> getSummary(String startDate, String endDate) async {
     try {
       final response = await _dio.get(
@@ -22,7 +21,7 @@ class ReportService {
     }
   }
 
-  // 2. Lấy dữ liệu biểu đồ tròn (getCategoryBreakdown)
+  // 2. Lấy dữ liệu biểu đồ tròn
   Future<List<dynamic>> getCategoryBreakdown(String startDate, String endDate) async {
     try {
       final response = await _dio.get(
@@ -39,7 +38,7 @@ class ReportService {
     }
   }
 
-  // 3. Lấy dữ liệu biểu đồ cột dòng tiền theo năm (getMonthlyFlow)
+  // 3. Lấy dữ liệu biểu đồ cột dòng tiền theo năm
   Future<List<dynamic>> getMonthlyFlow(int year) async {
     try {
       final response = await _dio.get(

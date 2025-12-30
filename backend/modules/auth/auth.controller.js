@@ -29,7 +29,7 @@ const registerUser = async (req, res) => {
 
         res.status(201).json({
             token,
-            user_id: user_id, // MongoDB trả về _id
+            user_id: user_id,
             name: name,
             message: 'Đăng ký tài khoản thành công!'
         });
@@ -77,7 +77,6 @@ const loginUser = async (req, res) => {
 };
 
 const getProfile = async (req, res) => {
-    // Đảm bảo middleware auth của bạn gán ID vào req.user.id hoặc req.user_id
     //const user_id = req.user.id || req.user_id;
     const user_id = "658123456789012345678901";
     try {
@@ -88,7 +87,7 @@ const getProfile = async (req, res) => {
         }
 
         res.status(200).json({
-            user_id: user._id, // Trả về _id của MongoDB
+            user_id: user._id,
             email: user.email,
             name: user.name,
             created_at: user.created_at

@@ -44,7 +44,6 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       _selectedDate = widget.reminder!.dueDate;
       _selectedFrequency = widget.reminder!.frequency;
     } else {
-      // Chế độ Add mới
       _titleController = TextEditingController();
       _messageController = TextEditingController();
     }

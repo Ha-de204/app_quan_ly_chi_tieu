@@ -22,7 +22,7 @@ const getTransactionsByUserId = async (user_id) => {
     return await Transaction.find({
         user_id: new mongoose.Types.ObjectId(user_id)
     })
-    .populate('category_id', 'name icon_code_point') // Thay thế cho INNER JOIN Category
+    .populate('category_id', 'name icon_code_point')
     .sort({ date: -1 });
 };
 

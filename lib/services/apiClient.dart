@@ -13,7 +13,6 @@ class ApiClient {
       receiveTimeout: const Duration(seconds: 20),
     ));
 
-    // Thêm Interceptor ngay khi tạo object Dio
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final prefs = await SharedPreferences.getInstance();

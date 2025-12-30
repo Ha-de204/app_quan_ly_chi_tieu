@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../constants.dart';
 import 'package:math_expressions/math_expressions.dart';
 import '../screens/setting_category_screen.dart';
-import '../models/TransactionData.dart';
 import '../services/apiTransaction.dart';
 import '../services/apiCategory.dart';
 
@@ -57,7 +56,6 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
       _noteController.text = tx['note']?.toString() ?? '';
 
       // 3. Tìm Index của danh mục (Quan trọng nhất)
-      // Phải đảm bảo so sánh chuỗi toString() để tránh lỗi khác kiểu dữ liệu
       final txCatId = (tx['category_id'] ?? tx['categoryId'])?.toString();
 
       int foundIndex = widget.categories.indexWhere((cat) {
@@ -65,7 +63,6 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
         return catId != null && catId == txCatId;
       });
 
-      // Nếu không tìm thấy bằng ID, thử tìm bằng tên
       if (foundIndex == -1) {
         foundIndex = widget.categories.indexWhere(
                 (cat) => cat['label'].toString().toLowerCase() == tx['category_name'].toString().toLowerCase()
@@ -93,8 +90,6 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
     }
 
     setState(() => _isSaving = true);
-    debugPrint("--- BẮT ĐẦU LƯU GIAO DỊCH ---");
-
     if (_needsCalculation()) {
       _onKeyPressed('check');
       await Future.delayed(const Duration(milliseconds: 50));
@@ -159,7 +154,6 @@ class _AddTransactionContentState extends State<AddTransactionContent> {
         }
       }
     } catch (e) {
-      debugPrint("LỖI NGHIÊM TRỌNG KHI LƯU: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Không thể kết nối đến máy chủ. Hãy thử lại sau!')),

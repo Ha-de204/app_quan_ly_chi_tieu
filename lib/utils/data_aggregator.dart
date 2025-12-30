@@ -36,12 +36,10 @@ class DataAggregator {
         _categoryService.getCategories(),
       ]);
 
-      // results[0] là danh sách dynamic từ apiTransaction
       if (results[0] != null) {
         _allTransactions = results[0] as List<dynamic>;
       }
 
-      // results[1] là danh sách dynamic từ apiCategory
       if (results[1] != null) {
         _allCategories = (results[1] as List)
             .map((json) => json as CategoryModel)

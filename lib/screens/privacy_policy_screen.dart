@@ -30,7 +30,7 @@ Bạn có quyền:
 - Yêu cầu xóa tất cả dữ liệu (xem mục "Xóa tất cả dữ liệu" trên màn hình Tài khoản).
 
  6. Liên hệ
-Nếu có bất kỳ câu hỏi nào về Chính sách bảo mật này, vui lòng liên hệ với chúng tôi qua email hỗ trợ: support@mockapp.com.
+Nếu có bất kỳ câu hỏi nào về Chính sách bảo mật này, vui lòng liên hệ với chúng tôi qua email hỗ trợ: abc@gmail.com.
 """;
 
   @override

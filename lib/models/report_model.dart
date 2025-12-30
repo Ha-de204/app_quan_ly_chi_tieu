@@ -1,4 +1,3 @@
-// 1. Model cho Tổng quan (Summary)
 class ReportSummaryModel {
   final double totalExpense;
   final double budgetAmount;
@@ -19,7 +18,6 @@ class ReportSummaryModel {
   }
 }
 
-// 2. Model cho Phân tích danh mục (vẽ biểu đồ tròn)
 class CategoryBreakdownModel {
   final String categoryId;
   final String categoryName;

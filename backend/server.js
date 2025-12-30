@@ -2,7 +2,6 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 
-
 const authRoutes = require('./modules/auth/auth.routes');
 const categoryRoutes = require('./modules/categories/category.routes');
 const transactionRoutes = require('./modules/transactions/transaction.routes');
@@ -28,7 +27,6 @@ const PORT = process.env.PORT || 5000;
 connectDB().then(() => {
     app.listen(PORT, () => {
         console.log(`✅ Server chạy trên http://localhost:${PORT}`);
-        console.log(`Kiểm tra API đăng ký: http://localhost:${PORT}/api/auth/register`);
     });
 }).catch(err => {
     console.error("Server không thể khởi động do lỗi DB:", err);

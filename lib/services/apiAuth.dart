@@ -14,7 +14,6 @@ class AuthService {
         "password": password,
       });
 
-      // Nếu thành công, trả về dữ liệu (gồm token, user_id...)
       return {"success": true, "data": response.data};
     } on DioException catch (e) {
       return {
@@ -24,7 +23,6 @@ class AuthService {
     }
   }
 
-  // Gọi hàm loginUser trong Controller
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final response = await _dio.post("auth/login", data: {
@@ -32,7 +30,6 @@ class AuthService {
         "password": password,
       });
 
-      // Lưu Token vào máy để dùng cho các API sau này (như lấy Profile)
       if (response.statusCode == 200) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', response.data['token']);
