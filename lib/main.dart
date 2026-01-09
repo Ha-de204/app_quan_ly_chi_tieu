@@ -24,10 +24,8 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
 
-      // Tắt biểu ngữ DEBUG
       debugShowCheckedModeBanner: false,
 
-      // Cấu hình Localization
       localizationsDelegates: const [
         GlobalWidgetsLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
